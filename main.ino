@@ -90,8 +90,8 @@ void setup()
     pinMode(9, OUTPUT);
     pinMode(10, OUTPUT);
     pinMode(11, OUTPUT); // led
+    attachInterrupt(digitalPinToInterrupt(3), timer, CHANGE);
     attachInterrupt(digitalPinToInterrupt(2), timer, CHANGE);
-    //attachInterrupt(digitalPinToInterrupt(2), timer, FALLING);
     TCCR1A = 0;
     TCCR1B = 0;
     //config_OCR1A = (16000000/(prescaler*1000))-1;
@@ -115,11 +115,45 @@ void timer() {
        TCCR1B = 0;
   }
 }
+ /*
+Mode “standard” : Le système est démarré normalement (sans bouton pressé) pour faire 
+l’acquisition des données.
+
+ Mode “configuration” : Le système est démarré avec le bouton rouge pressé. Il permet de 
+configurer les paramètres du système, l’acquisition des capteurs est désactivée et le système 
+bascule en mode standard au bout de 30 minutes sans activité.
+
+ Mode “maintenance” : Accessible depuis le mode standard ou économique, il permet d’avoir 
+accès aux données des capteurs directement depuis une interface série et permet de changer en 
+toute sécurité la carte SD sans risque de corrompre les données. On y accède en appuyant 
+pendant 5 secondes sur le bouton rouge. En appuyant sur le bouton rouge pendant 5 secondes, 
+le système rebascule dans le mode précédent.
+
+ Mode “économique” : Accessible uniquement depuis le mode standard, il permet d’économiser 
+de la batterie en désactivant certains capteurs et traitements. On y accède en appuyant pendant 
+5 secondes sur le bouton vert. En appuyant 5 secondes sur le bouton rouge, le système rebascule 
+en mode standard.
+*/
 
 
 ISR(TIMER1_COMPA_vect)
 {
-  gestionnaire_modes(1);
+  if (mode == MODE_ECO || mode == MODE_STANDARD)
+  {
+    gestionnaire_modes(MODE_MAINTENANCE);
+  }
+
+  if (mode == MODE_MAINTENANCE)
+  {
+    gestionnaire_modes(previous_mode);
+  }
+
+  if (mode == MODE_ECO)
+  {
+    gestionnaire_modes(MODE_STANDARD);
+  }
+
+  //gestionnaire_modes(MODE_CONFIGURATION);
 }
 
 void loop()
