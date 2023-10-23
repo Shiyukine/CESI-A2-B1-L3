@@ -7,6 +7,3 @@ void loop()
 {
     // blablah
 }
-
-
-//test
