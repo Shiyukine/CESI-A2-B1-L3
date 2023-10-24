@@ -103,9 +103,14 @@ void setup()
     TCCR1B = 0;
     //config_OCR1A = (16000000/(prescaler*1000))-1;
     Serial.begin(9600);
-    Serial.println(mode);
+    Serial.println("Mode de lancement : " + String(mode));
     digitalWrite(9, HIGH);
-    /*
+
+    for (int i = 0; i < 9; i++)
+    {
+      capteurs[i] = calloc(1, sizeof(Capteur));
+    }
+
     capteurs[0]->type = 0; //'GPS';
     capteurs[1]->type = 1; //'hygrometrie';
     capteurs[2]->type = 2; //'temperature';
@@ -115,6 +120,7 @@ void setup()
     capteurs[6]->type = 6; //'vent';
     capteurs[7]->type = 7; //'temp_eau';
     capteurs[8]->type = 8; //'courant';
+    /*
     for (int i = 0; i < 9; i++)
     {
       Serial.println(capteurs[i]->type);
@@ -187,13 +193,14 @@ ISR(TIMER1_COMPA_vect)
 
 void loop()
 {
-    if (mode == MODE_STANDARD || mode == MODE_ECO)
-    {
+  
+    //if (mode == MODE_STANDARD || mode == MODE_ECO)
+    //{
       //tab_recu = Acquisition();     // appel de acquisition
       //Moyenne();     // Moyenne capteur
       //Changement_fichier();   // appel changement fichier
       //Enregistrement(tab_recu);   //appel enregistrement
-    }
+    //}
 
     if (mode == MODE_MAINTENANCE)  // A REVOIR
     {
@@ -205,8 +212,8 @@ void loop()
       }
     }
 
-    if (mode == MODE_MAINTENANCE)
-    {
+    //if (mode == MODE_MAINTENANCE)
+    //{
       //tab_recu = Acquisition();     // appel de acquisition
       //Moyenne();     // Moyenne capteur
       //Serialprintln("Mode maintenance acitvée, Voici les données des capteurs", tab_recu);    }
@@ -223,7 +230,7 @@ void gestionnaire_modes(int nvmode)
         digitalWrite(9, HIGH);
         digitalWrite(10, LOW);
         digitalWrite(11, LOW); // en vert
-        for (int i = 0; i < sizeof(capteurs) / sizeof(Capteur); i++)
+        for (int i = 0; i < sizeof(capteurs) / 2; i++)
         {
             capteurs[i]->actif = 1;
         }
@@ -236,7 +243,7 @@ void gestionnaire_modes(int nvmode)
         digitalWrite(11, HIGH);
         digitalWrite(10, LOW); // en jaune
          // en jaune
-        for (int i = 0; i < sizeof(capteurs) / sizeof(Capteur); i++)
+        for (int i = 0; i < sizeof(capteurs) / 2; i++)
         {
             capteurs[i]->actif = 0;
         }
@@ -246,10 +253,13 @@ void gestionnaire_modes(int nvmode)
         digitalWrite(10, HIGH);
         digitalWrite(11, HIGH);
         digitalWrite(9, LOW); // en orange
-        for (int i = 0; i < sizeof(capteurs) / sizeof(Capteur); i++)
+        for (int i = 0; i < sizeof(capteurs) / 2; i++)
         {
             capteurs[i]->actif = 1;
+            
         }
+        
+        
         //previous_mode = 3;
         break;
 
@@ -258,7 +268,7 @@ void gestionnaire_modes(int nvmode)
         digitalWrite(10, LOW);
         digitalWrite(9, LOW);
         digitalWrite(11, HIGH); // en bleu
-        for (int i = 0; i < sizeof(capteurs) / sizeof(Capteur); i++)
+        for (int i = 0; i < sizeof(capteurs) / 2; i++)
         {
             // capteurs[i]->actif = !(particule || temp_eau || vent || courant);
             if (capteurs[i]->type == particule || capteurs[i]->type == temp_eau || capteurs[i]->type == vent || capteurs[i]->type == courant)
@@ -272,5 +282,44 @@ void gestionnaire_modes(int nvmode)
         break;
     }
     mode = nvmode;
-    Serial.println(mode);
+    Serial.println("Changement de mode" + String(mode));
+    for (int i = 0; i<sizeof(capteurs) / 2; i++)
+        {
+          Serial.println(capteurs[i]->actif);
+        }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
