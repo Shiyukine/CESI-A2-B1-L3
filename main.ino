@@ -75,6 +75,11 @@ int prescaler;
 
 volatile byte *pointeur = &TCCR1B;
 
+int GPS;
+int hygrometrie;
+int temperature;
+int pression;
+int luminosite;
 int particule;
 int vent;
 int temp_eau;
@@ -82,6 +87,7 @@ int courant;
 
 int bouton_test;
 
+//int temps_global = millis();
 
 void setup()
 {
@@ -99,6 +105,20 @@ void setup()
     Serial.begin(9600);
     Serial.println(mode);
     digitalWrite(9, HIGH);
+    /*
+    capteurs[0]->type = 0; //'GPS';
+    capteurs[1]->type = 1; //'hygrometrie';
+    capteurs[2]->type = 2; //'temperature';
+    capteurs[3]->type = 3; //'pression';
+    capteurs[4]->type = 4; //'luminosite';
+    capteurs[5]->type = 5; //'particule';
+    capteurs[6]->type = 6; //'vent';
+    capteurs[7]->type = 7; //'temp_eau';
+    capteurs[8]->type = 8; //'courant';
+    for (int i = 0; i < 9; i++)
+    {
+      Serial.println(capteurs[i]->type);
+    }*/
 }
 
 
@@ -167,22 +187,29 @@ ISR(TIMER1_COMPA_vect)
 
 void loop()
 {
-    if (mode == MODE_STANDARD)
+    if (mode == MODE_STANDARD || mode == MODE_ECO)
     {
+      //tab_recu = Acquisition();     // appel de acquisition
+      //Moyenne();     // Moyenne capteur
+      //Changement_fichier();   // appel changement fichier
+      //Enregistrement(tab_recu);   //appel enregistrement
     }
 
-    if (mode == MODE_CONFIGURATION)
+    if (mode == MODE_MAINTENANCE)  // A REVOIR
     {
-        //gestionnaire_modes(previous_mode);
+      int temps = millis();
+      //get_commande();
+      if (temps > 10000) 
+      {
+        gestionnaire_modes(previous_mode);
+      }
     }
 
     if (mode == MODE_MAINTENANCE)
     {
-    }
-
-    if (mode == MODE_ECO)
-    {
-    }
+      //tab_recu = Acquisition();     // appel de acquisition
+      //Moyenne();     // Moyenne capteur
+      //Serialprintln("Mode maintenance acitvée, Voici les données des capteurs", tab_recu);    }
 }
 
 void gestionnaire_modes(int nvmode)
