@@ -1,92 +1,138 @@
 /*
-  SD card read/write
-
-  This example shows how to read and write data to and from an SD card file
-  The circuit:
    SD card attached to SPI bus as follows:
  ** MOSI - pin 11
  ** MISO - pin 12
  ** CLK - pin 13
  ** CS - pin 4 (for MKRZero SD: SDCARD_SS_PIN)
-
-  created   Nov 2010
-  by David A. Mellis
-  modified 9 Apr 2012
-  by Tom Igoe
-
-  This example code is in the public domain.
-
 */
 
 #include <SPI.h>
 #include <SD.h>
 
-File myFile;
+typedef struct
+{
+    int type;
+    int min;
+    int max;
+    int timeout;
+    bool actif;
+    int nombre_erreur;
+    int dernieres_valeurs[10];
+    int tableau_valeurs_index;
+    int moyenne;
+} Capteur;
+
 int file_max_size = 2048;
 int compteur_taille_fichier = 0;
 int compteur_revision = 0;
-Capteur capteurs[9];
+Capteur *capteurs[9];
+char *aa = "01";
+char *mm = "01";
+char *jj = "01";
+
+void erreur(int erreur, File *actualFile)
+{
+    Serial.println("Error " + String(erreur));
+    Serial.println(String(actualFile->getWriteError()));
+}
+
+File *changement_fichier()
+{
+    static File actualFile = SD.open((*aa) + (*mm) + (*jj) + "_" + String(compteur_revision) + ".log", FILE_WRITE | FILE_READ);
+    static bool firstCall = true;
+    if (firstCall)
+    {
+        Serial.println("yo");
+        actualFile.seek(0);
+        while (actualFile.available())
+        {
+            Serial.write(actualFile.read());
+        }
+        Serial.println("\ndayo");
+        actualFile.seek(0);
+    }
+    firstCall = false;
+    if (!actualFile)
+        erreur(1, &actualFile);
+    bool changeFile = false;
+    if (compteur_taille_fichier + 256 > 2048)
+    {
+        compteur_revision++;
+        changeFile = true;
+    }
+    char *naa = "01";
+    char *nmm = "01";
+    char *njj = "01";
+    if ((*naa) != (*aa) && (*nmm) != (*mm) && (*njj) != (*jj))
+    {
+        compteur_revision = 0;
+        aa = naa;
+        mm = nmm;
+        jj = njj;
+        changeFile = true;
+    }
+    if (changeFile)
+    {
+        File newFile = SD.open((*aa) + (*mm) + (*jj) + "_" + String(compteur_revision) + ".log", FILE_WRITE);
+        actualFile.seek(0);
+        while (actualFile.available())
+        {
+            if (newFile.availableForWrite())
+                newFile.print(actualFile.read());
+            else
+                erreur(2, &actualFile);
+        }
+        newFile.flush();
+        newFile.close();
+        actualFile.write("");
+    }
+    return &actualFile;
+}
 
 void enregistrement()
 {
+    File *actualFile = changement_fichier();
+    /*for (int i = 0; i < sizeof(capteurs) / sizeof(capteurs[0]); i++)
+    {
+        if (actualFile->availableForWrite())
+            actualFile->print("25 ");
+        else
+            erreur(20);
+        actualFile->flush();
+    }*/
+    if (actualFile->availableForWrite())
+        actualFile->write("Capteur 1 = 25, Capteur 2 = 25, Capteur 3 = 25, Capteur 4 = 25, Capteur 5 = 25, Capteur 6 = 25, Capteur 7 = 25, Capteur 8 = 25, Capteur 9 = 25 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    // actualFile->write("25 25 25 25 25 25 25 25 25");
+    // actualFile->println("Capteur 1 = 25, Capteur 2 = 25, Capteur 3 = 25, Capteur 4 = 25, Capteur 5 = 25, Capteur 6 = 25, Capteur 7 = 25, Capteur 8 = 25, Capteur 9 = 25");
+    else
+        erreur(21, actualFile);
+    // actualFile->flush();
 }
 
-void setup()
+void mode_standard()
 {
-    // Open serial communications and wait for port to open:
-    Serial.begin(9600);
+    Serial.begin(115200);
 
     Serial.print("Initializing SD card...");
 
     if (!SD.begin(4))
     {
         Serial.println("initialization failed!");
+        erreur(13, NULL);
         while (1)
             ;
     }
-    Serial.println("initialization done.");
-
-    // open the file. note that only one file can be open at a time,
-    // so you have to close this one before opening another.
-    myFile = SD.open("test.txt", FILE_WRITE);
-
-    // if the file opened okay, write to it:
-    if (myFile)
-    {
-        Serial.print("Writing to test.txt...");
-        myFile.println("testing 1, 2, 3.");
-        // close the file:
-        myFile.close();
-        Serial.println("done.");
-    }
     else
-    {
-        // if the file didn't open, print an error:
-        Serial.println("error opening test.txt");
-    }
+        Serial.println("initialization done.");
+}
 
-    // re-open the file for reading:
-    myFile = SD.open("test.txt");
-    if (myFile)
-    {
-        Serial.println("test.txt:");
-
-        // read from the file until there's nothing else in it:
-        while (myFile.available())
-        {
-            Serial.write(myFile.read());
-        }
-        // close the file:
-        myFile.close();
-    }
-    else
-    {
-        // if the file didn't open, print an error:
-        Serial.println("error opening test.txt");
-    }
+void setup()
+{
+    mode_standard();
 }
 
 void loop()
 {
-    // nothing happens after setup
+    enregistrement();
+    delay(2e3);
 }
