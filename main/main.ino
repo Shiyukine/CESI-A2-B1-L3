@@ -18,9 +18,9 @@ int compteur_taille_fichier = 0;
 int compteur_revision = 0;
 Capteur *capteurs[9];
 bool sdMounted = false;
-char *aa = "01";
-char *mm = "01";
-char *jj = "01";
+String aa = "01";
+String mm = "01";
+String jj = "01";
 SdFat32 SD;
 
 void erreur(int erreur)
@@ -40,17 +40,20 @@ File *changement_fichier(int mess_size)
         changeFile = true;
         compteur_taille_fichier = 0;
     }
-    char *naa = "01";
-    char *nmm = "01";
-    char *njj = "01";
-    /*if ((*naa) != (*aa) && (*nmm) != (*mm) && (*njj) != (*jj))
+    /*String naa = "0" + String(String(aa).toInt() + 1);
+    String nmm = "0" + String(String(mm).toInt() + 1);
+    String njj = "0" + String(String(jj).toInt() + 1);*/
+    String naa = aa;
+    String nmm = mm;
+    String njj = jj;
+    if (aa != naa && mm != nmm && jj != njj)
     {
         compteur_revision = 0;
         aa = naa;
         mm = nmm;
         jj = njj;
         changeFile = true;
-    }*/
+    }
     if (changeFile)
     {
         Serial.println(String(aa) + String(mm) + String(jj) + "_" + String(compteur_revision) + ".log");
