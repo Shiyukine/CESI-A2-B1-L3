@@ -16,8 +16,8 @@ typedef struct
 int file_max_size = 2048;
 int compteur_taille_fichier = 0;
 int compteur_revision = 0;
+int mode = 0;
 Capteur *capteurs[9];
-bool sdMounted = false;
 String aa = "01";
 String mm = "01";
 String jj = "01";
@@ -65,25 +65,21 @@ File *changement_fichier(int mess_size)
         }
         else
         {
-            int lastPos = actualFile.position();
             actualFile.seek(0);
-            int charstot = 0;
             while (actualFile.available())
             {
-                if (!actualFile.getWriteError())
-                {
-                    newFile.write(actualFile.read());
-                }
-                else
+                int lastPos = actualFile.position();
+                newFile.write(actualFile.read());
+                if (lastPos == actualFile.position())
                 {
                     erreur(2);
+                    break;
                 }
-                charstot++;
             }
             newFile.flush();
             newFile.close();
             actualFile.seek(0);
-            Serial.println("Changed file " + String(charstot));
+            Serial.println("Changed file");
         }
     }
     return &actualFile;
@@ -91,27 +87,27 @@ File *changement_fichier(int mess_size)
 
 void enregistrement()
 {
-    if (sdMounted)
+    char mess[] = "Capteur 1 = 25, Capteur 2 = 25, Capteur 3 = 25, Capteur 4 = 25, Capteur 5 = 25, Capteur 6 = 25, Capteur 7 = 25, Capteur 8 = 25, Capteur 9 = 25 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    File *actualFile = changement_fichier(sizeof(mess) / sizeof(mess[0]));
+    /*for (int i = 0; i < sizeof(capteurs) / sizeof(capteurs[0]); i++)
     {
-        char mess[] = "Capteur 1 = 25, Capteur 2 = 25, Capteur 3 = 25, Capteur 4 = 25, Capteur 5 = 25, Capteur 6 = 25, Capteur 7 = 25, Capteur 8 = 25, Capteur 9 = 25 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        File *actualFile = changement_fichier(sizeof(mess) / sizeof(mess[0]));
-        /*for (int i = 0; i < sizeof(capteurs) / sizeof(capteurs[0]); i++)
-        {
-            if (actualFile->availableForWrite())
-                actualFile->print("25 ");
-            else
-                erreur(20);
-            actualFile->flush();
-        }*/
-        actualFile->println(mess);
-        if (actualFile->getWriteError())
-            erreur(21);
+        if (actualFile->availableForWrite())
+            actualFile->print("25 ");
+        else
+            erreur(20);
         actualFile->flush();
-    }
+    }*/
+    int pos = actualFile->position();
+    actualFile->println(mess);
+    if (pos == actualFile->position())
+        erreur(21);
+    else
+        actualFile->flush();
 }
 
 void mode_standard()
 {
+    mode = 1;
     Serial.begin(115200);
     Serial.print(F("Initializing SD card..."));
     if (!SD.begin(4))
@@ -121,7 +117,6 @@ void mode_standard()
     }
     else
     {
-        sdMounted = true;
         Serial.println(F("initialization done."));
     }
 }
@@ -133,6 +128,7 @@ void setup()
 
 void loop()
 {
-    enregistrement();
+    if (mode == 1)
+        enregistrement();
     delay(1e3);
 }
