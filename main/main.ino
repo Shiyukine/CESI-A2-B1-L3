@@ -1,3 +1,4 @@
+#include <RTClib.h>
 #include <SdFat.h>
 
 typedef struct
@@ -18,10 +19,11 @@ int compteur_taille_fichier = 0;
 int compteur_revision = 0;
 int mode = 0;
 Capteur *capteurs[9];
-String aa = "01";
-String mm = "01";
-String jj = "01";
-SdFat32 SD;
+int year;
+int month;
+int day;
+SdFat32 *SD;
+RTC_DS1307 *rtc;
 
 void erreur(int erreur)
 {
@@ -30,7 +32,22 @@ void erreur(int erreur)
 
 File *changement_fichier(int mess_size)
 {
-    static File actualFile = SD.open(String(aa) + String(mm) + String(jj) + "_" + String(compteur_revision) + ".log", O_RDWR | O_CREAT | O_TRUNC);
+    DateTime *now = &rtc->now();
+    static File actualFile;
+    static bool firstcall = true;
+    if (firstcall)
+    {
+        String aa = String(now->year());
+        aa = String(aa[2]) + String(aa[3]);
+        String mm = String(now->month());
+        if (now->month() < 10)
+            mm = "0" + mm;
+        String jj = String(now->day());
+        if (now->day() < 10)
+            jj = "0" + jj;
+        actualFile = SD->open(String(now->year()) + String(mm) + String(jj) + "_" + String(compteur_revision) + ".log", O_RDWR | O_CREAT | O_TRUNC);
+    }
+    firstcall = false;
     if (!actualFile)
         erreur(1);
     bool changeFile = false;
@@ -40,24 +57,26 @@ File *changement_fichier(int mess_size)
         changeFile = true;
         compteur_taille_fichier = 0;
     }
-    /*String naa = "0" + String(String(aa).toInt() + 1);
-    String nmm = "0" + String(String(mm).toInt() + 1);
-    String njj = "0" + String(String(jj).toInt() + 1);*/
-    String naa = aa;
-    String nmm = mm;
-    String njj = jj;
-    if (aa != naa && mm != nmm && jj != njj)
+    if (year != now->year() && month != now->month() && day != now->day())
     {
         compteur_revision = 0;
-        aa = naa;
-        mm = nmm;
-        jj = njj;
+        year = now->year();
+        month = now->month();
+        day = now->day();
         changeFile = true;
     }
     if (changeFile)
     {
-        Serial.println(String(aa) + String(mm) + String(jj) + "_" + String(compteur_revision) + ".log");
-        File newFile = SD.open(String(aa) + String(mm) + String(jj) + "_" + String(compteur_revision) + ".log", O_RDWR | O_CREAT | O_TRUNC);
+        String aa = String(now->year());
+        aa = String(aa[2]) + String(aa[3]);
+        String mm = String(now->month());
+        if (now->month() < 10)
+            mm = "0" + mm;
+        String jj = String(now->day());
+        if (now->day() < 10)
+            jj = "0" + jj;
+        Serial.println(aa + mm + jj + "_" + String(compteur_revision) + ".log");
+        File newFile = SD->open(aa + mm + jj + "_" + String(compteur_revision) + ".log", O_RDWR | O_CREAT | O_TRUNC);
         if (!newFile)
         {
             compteur_revision--;
@@ -79,7 +98,7 @@ File *changement_fichier(int mess_size)
             newFile.flush();
             newFile.close();
             actualFile.seek(0);
-            Serial.println("Changed file");
+            Serial.println(F("Changed file"));
         }
     }
     return &actualFile;
@@ -110,7 +129,9 @@ void mode_standard()
     mode = 1;
     Serial.begin(115200);
     Serial.print(F("Initializing SD card..."));
-    if (!SD.begin(4))
+    SD = new SdFat32();
+    rtc = new RTC_DS1307();
+    if (!SD->begin(4))
     {
         Serial.println(F("initialization failed!"));
         erreur(13);
@@ -118,6 +139,17 @@ void mode_standard()
     else
     {
         Serial.println(F("initialization done."));
+    }
+    if (!rtc->begin())
+    {
+        Serial.println(F("Horloge introuvable"));
+    }
+    else
+    {
+        DateTime *now = &rtc->now();
+        year = now->year();
+        month = now->month();
+        day = now->day();
     }
 }
 
