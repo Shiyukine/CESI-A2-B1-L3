@@ -45,7 +45,7 @@ File *changement_fichier(int mess_size)
         String jj = String(now->day());
         if (now->day() < 10)
             jj = "0" + jj;
-        actualFile = SD->open(String(now->year()) + String(mm) + String(jj) + "_" + String(compteur_revision) + ".LOG", O_RDWR | O_CREAT | O_TRUNC);
+        actualFile = SD->open(aa + mm + jj + "_" + String(compteur_revision) + ".LOG", O_RDWR | O_CREAT | O_TRUNC);
     }
     firstcall = false;
     if (!actualFile)
@@ -75,7 +75,7 @@ File *changement_fichier(int mess_size)
         String jj = String(now->day());
         if (now->day() < 10)
             jj = "0" + jj;
-        Serial.println(aa + mm + jj + "_" + String(compteur_revision) + ".LOG");
+        Serial.println("Copy to " + aa + mm + jj + "_" + String(compteur_revision) + ".LOG");
         File newFile = SD->open(aa + mm + jj + "_" + String(compteur_revision) + ".LOG", O_RDWR | O_CREAT | O_TRUNC);
         if (!newFile)
         {
