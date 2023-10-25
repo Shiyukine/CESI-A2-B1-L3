@@ -14,7 +14,7 @@ void setup() {
   TCCR1B |= B00000100;      // Met CS12 à 1 pour un prescaler à 256 (limite)
   TIMSK1 |= B00000010;      // Met OCIE1A à 1 pour comparer le comparer au match A
 
-  OCR1A = 62500;            // Compteur max à 31250 pour 1 s
+  OCR1A = 62500;            // Compteur max à 62500 pour 1 s
   sei();                    // Remet en marche les interruptions
 
   pinMode(R, OUTPUT);
@@ -31,8 +31,8 @@ ISR(TIMER1_COMPA_vect) {
   TCNT1 = 0;
   if(code_couleur == 2) {   // Erreur Horloge RTC
     if(etatled == 0) {
-      analogWrite(R, 255);   // On peut changer que la verte
-      analogWrite(B, 0);    // Sinon ça bug =)
+      analogWrite(R, 255);   
+      analogWrite(B, 0);    
       etatled = 1;
     }
     else {
