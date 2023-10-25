@@ -193,7 +193,7 @@ ISR(TIMER1_COMPA_vect)
 
 void loop()
 {
-  
+  get_commande();
     //if (mode == MODE_STANDARD || mode == MODE_ECO)
     //{
       //tab_recu = Acquisition();     // appel de acquisition
@@ -283,7 +283,7 @@ void gestionnaire_modes(int nvmode)
     }
     mode = nvmode;
     Serial.println("Changement de mode" + String(mode));
-    for (int i = 0; i<sizeof(capteurs) / 2; i++)
+    for (int i = 0; i < sizeof(capteurs) / 2; i++)
         {
           Serial.println(capteurs[i]->actif);
         }
@@ -291,35 +291,99 @@ void gestionnaire_modes(int nvmode)
 
 
 
+void get_commande()
+{
+  int i;
+  int MIN;
+  int MAX;
+
+  if (Serial.available() != 0)
+  {
+    String command = Serial.readStringUntil('=');
+    int value = Serial.readStringUntil('\n').toInt();
+
+    if(command.indexOf("LUMIN") > 0)
+    {
+      i = 4;
+      MIN = 0;
+      MAX = 1023;
+    }
+
+    if(command.indexOf("TEMP") > 0)
+    {
+      i = 1;
+      MIN = -40;
+      MAX = 85;
+    }
+
+    if(command.indexOf("HYGR") > 0)
+    {
+      i = 2;
+      MIN = -40;
+      MAX = 85;
+    }
+
+    if(command.indexOf("PRESSURE") > 0)
+    {
+      i = 3;
+      MIN = 300;
+      MAX = 1100;
+    }
+
+    if(command == "LUMIN" || command == "TEMP_AIR" || command == "HYGR" || command == "PRESSURE")
+    {
+      if (value == 0 || value == 1)
+      {
+        capteurs[i]->actif = value;
+        Serial.println("succès de l'operation !!");
+      }
+      else
+      {
+        Serial.println("veuillez entrer une valeur entre 0 et 1.\n");
+      }
+      command = "None";
+    }
+    
+
+    if(command.indexOf("MIN") > 0)
+    {
+      if (value > MIN && value < MAX)
+      {
+        capteurs[i]->min = value;
+        Serial.println("succès de l'operation !!");
+      }
+      else
+      {
+        Serial.println("veuillez entrer une valeur entre "+ String(MIN) + " et " + String(MAX) + ".\n");
+      }
+      command = "None";
+    }
 
 
+    if(command.indexOf("MAX") > 0)
+    {
+      if (value > MIN && value < MAX)
+      {
+        capteurs[i]->max = value;
+        Serial.println("succès de l'operation !!");
+      }
+      else
+      {
+        Serial.println("veuillez entrer une valeur entre "+ String(MIN) + " et " + String(MAX) + ".\n");
+      }
+      command = "None";
+    }
 
 
+    /*
+    for (int i = 0; i < 9; i++)
+    {
+      Serial.println("Nouvelles valeurs actives des capteurs : " + String(capteurs[i]->actif));
+      Serial.println("Nouvelles valeurs des seuil MIN : " + String(capteurs[i]->min));
+      Serial.println("Nouvelles valeurs des seuil MAX : " + String(capteurs[i]->max));
+    }*/
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  }
+}
 
 
