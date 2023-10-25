@@ -91,41 +91,63 @@ int bouton_test;
 
 void setup()
 {
-    mode = MODE_STANDARD;
-    pinMode(button1, INPUT);  // bouton
-    pinMode(button2, INPUT);  // bouton
-    pinMode(9, OUTPUT);
-    pinMode(10, OUTPUT);
-    pinMode(11, OUTPUT); // led
-    attachInterrupt(digitalPinToInterrupt(2), timer, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(3), timer, CHANGE);
-    TCCR1A = 0;
-    TCCR1B = 0;
-    //config_OCR1A = (16000000/(prescaler*1000))-1;
-    Serial.begin(9600);
-    Serial.println("Mode de lancement : " + String(mode));
+
+  //mode = MODE_STANDARD;
+  pinMode(button1, INPUT);  // bouton
+  pinMode(button2, INPUT);  // bouton
+  pinMode(9, OUTPUT);
+  pinMode(10, OUTPUT);
+  pinMode(11, OUTPUT); // led
+
+  mode = MODE_STANDARD;
+  digitalWrite(9, HIGH);
+  cli();
+  while (digitalRead(3) == HIGH)
+  {
+    //bouton_test == 2;
+    //previous_mode = MODE_STANDARD;
+    mode = MODE_CONFIGURATION;
+    digitalWrite(11, HIGH);
+    digitalWrite(10, HIGH);
     digitalWrite(9, HIGH);
+    //delay(5000);
+  }
+  
+ 
+  //digitalWrite(9, HIGH);
+  attachInterrupt(digitalPinToInterrupt(2), timer, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(3), timer, CHANGE);
+  TCCR1A = 0;
+  TCCR1B = 0;
+  //config_OCR1A = (16000000/(prescaler*1000))-1;
+  Serial.begin(9600);
+  Serial.println("Mode de lancement : " + String(mode));
+  
 
-    for (int i = 0; i < 9; i++)
-    {
-      capteurs[i] = calloc(1, sizeof(Capteur));
-    }
+  for (int i = 0; i < 9; i++)
+  {
+    capteurs[i] = calloc(1, sizeof(Capteur));
+  }
 
-    capteurs[0]->type = 0; //'GPS';
-    capteurs[1]->type = 1; //'hygrometrie';
-    capteurs[2]->type = 2; //'temperature';
-    capteurs[3]->type = 3; //'pression';
-    capteurs[4]->type = 4; //'luminosite';
-    capteurs[5]->type = 5; //'particule';
-    capteurs[6]->type = 6; //'vent';
-    capteurs[7]->type = 7; //'temp_eau';
-    capteurs[8]->type = 8; //'courant';
-    /*
-    for (int i = 0; i < 9; i++)
-    {
-      Serial.println(capteurs[i]->type);
-    }*/
-}
+  capteurs[0]->type = 0; //'GPS';
+  capteurs[1]->type = 1; //'hygrometrie';
+  capteurs[2]->type = 2; //'temperature';
+  capteurs[3]->type = 3; //'pression';
+  capteurs[4]->type = 4; //'luminosite';
+  capteurs[5]->type = 5; //'particule';
+  capteurs[6]->type = 6; //'vent';
+  capteurs[7]->type = 7; //'temp_eau';
+  capteurs[8]->type = 8; //'courant';
+  /*
+  for (int i = 0; i < 9; i++)
+  {
+    Serial.println(capteurs[i]->type);
+  }*/
+  
+  sei();
+}  // fin setup
+
+
 
 
 void timer() {
@@ -145,7 +167,7 @@ void timer() {
 
 ISR(TIMER1_COMPA_vect)
 {
-  
+/*
   if (digitalRead(2) == HIGH)
   {
     bouton_test = 2;
@@ -157,31 +179,39 @@ ISR(TIMER1_COMPA_vect)
     bouton_test = 3;
     //Serial.println(bouton_test);
   }
+*/
 
-
-    switch (mode)
+    switch (mode)  
     {
       case MODE_STANDARD:
-        if (bouton_test == 2) 
+        if (digitalRead(2) == HIGH) 
         {
-          gestionnaire_modes(MODE_MAINTENANCE);           
+          gestionnaire_modes(MODE_MAINTENANCE);         
+          //Serial.println(bouton_test == 2);
           break;
         }   
-        else
+        if (digitalRead(3) == HIGH)
         {
           gestionnaire_modes(MODE_ECO);           
           break;
-        }                
+        }     
+
+      case MODE_CONFIGURATION:
+        if (true)
+        {
+                 
+          break;
+        }             
       
       case MODE_ECO:
-        if (bouton_test == 3) 
+        if (digitalRead(3) == HIGH) 
         {
           gestionnaire_modes(MODE_STANDARD);        
           break;
         }  
 
       case MODE_MAINTENANCE:                              
-        if (bouton_test == 2) 
+        if (digitalRead(2) == HIGH) 
         {
           gestionnaire_modes(previous_mode);        
           break;
@@ -193,31 +223,23 @@ ISR(TIMER1_COMPA_vect)
 
 void loop()
 {
-  get_commande();
-    //if (mode == MODE_STANDARD || mode == MODE_ECO)
-    //{
-      //tab_recu = Acquisition();     // appel de acquisition
-      //Moyenne();     // Moyenne capteur
-      //Changement_fichier();   // appel changement fichier
-      //Enregistrement(tab_recu);   //appel enregistrement
-    //}
-
-    if (mode == MODE_MAINTENANCE)  // A REVOIR
+  if (mode == MODE_CONFIGURATION)  // A REVOIR
+  {
+    int temps = millis();
+    get_commande();
+    
+    if (temps > 100) 
     {
-      int temps = millis();
-      //get_commande();
-      if (temps > 10000) 
-      {
-        gestionnaire_modes(previous_mode);
-      }
+      int p =2;
+      gestionnaire_modes(MODE_STANDARD);
     }
-
-    //if (mode == MODE_MAINTENANCE)
-    //{
-      //tab_recu = Acquisition();     // appel de acquisition
-      //Moyenne();     // Moyenne capteur
-      //Serialprintln("Mode maintenance acitvée, Voici les données des capteurs", tab_recu);    }
+  }
+  Serial.println(mode);
+  Serial.println("previous" + String(previous_mode));
+  delay(1000);
 }
+
+
 
 void gestionnaire_modes(int nvmode)
 {
@@ -226,7 +248,7 @@ void gestionnaire_modes(int nvmode)
 
     switch (nvmode)
     {
-    case 0:
+    case 0:             //standard
         digitalWrite(9, HIGH);
         digitalWrite(10, LOW);
         digitalWrite(11, LOW); // en vert
@@ -237,7 +259,7 @@ void gestionnaire_modes(int nvmode)
         //previous_mode = MODE_STANDARD;
         break;
 
-    case 1:
+    case 1:             // config
   
         digitalWrite(9, HIGH);
         digitalWrite(11, HIGH);
@@ -249,7 +271,7 @@ void gestionnaire_modes(int nvmode)
         }
         break;
 
-    case 2:
+    case 2:           //maintenance
         digitalWrite(10, HIGH);
         digitalWrite(11, HIGH);
         digitalWrite(9, LOW); // en orange
@@ -258,25 +280,22 @@ void gestionnaire_modes(int nvmode)
             capteurs[i]->actif = 1;
             
         }
-        
-        
         //previous_mode = 3;
         break;
 
-    case 3:
+    case 3:                   //eco
 
         digitalWrite(10, LOW);
         digitalWrite(9, LOW);
         digitalWrite(11, HIGH); // en bleu
         for (int i = 0; i < sizeof(capteurs) / 2; i++)
         {
-            // capteurs[i]->actif = !(particule || temp_eau || vent || courant);
-            if (capteurs[i]->type == particule || capteurs[i]->type == temp_eau || capteurs[i]->type == vent || capteurs[i]->type == courant)
+            if (capteurs[i]->type == 5 || capteurs[i]->type == 6 || capteurs[i]->type == 7 || capteurs[i]->type == 8)
             {
                 capteurs[i]->actif = 0;
             }
             else
-                capteurs[i]->actif = MODE_ECO;
+                capteurs[i]->actif = 1;
         }
         //previous_mode = 3;
         break;
