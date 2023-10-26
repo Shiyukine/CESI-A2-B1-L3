@@ -189,43 +189,79 @@ void enregistrement()
     actualFile->flush();
 }
 
-void mode_standard()
+void gestionnaire_mode(int nvmode)
 {
-  mode = 1;
-  Serial.begin(115200);
-  Serial.print(F("Initializing SD card..."));
-  SD = new SdFat32();
-  rtc = new RTC_DS1307();
-  if (!SD->begin(4))
+  if (nvmode == MODE_STANDARD)
   {
-    Serial.println(F("initialization failed!"));
-    erreur(13);
+    Serial.begin(115200);
+    Serial.print(F("Initializing SD card..."));
+    SD = new SdFat32();
+    rtc = new RTC_DS1307();
+    if (!SD->begin(4))
+    {
+      Serial.println(F("initialization failed!"));
+      erreur(13);
+    }
+    else
+    {
+      Serial.println(F("initialization done."));
+    }
+    if (!rtc->begin())
+    {
+      Serial.println(F("Horloge introuvable"));
+    }
+    else
+    {
+      DateTime *now = &rtc->now();
+      year = now->year();
+      month = now->month();
+      day = now->day();
+    }
   }
-  else
+  else if (nvmode == MODE_CONFIGURATION)
   {
-    Serial.println(F("initialization done."));
-  }
-  if (!rtc->begin())
-  {
-    Serial.println(F("Horloge introuvable"));
-  }
-  else
-  {
-    DateTime *now = &rtc->now();
-    year = now->year();
-    month = now->month();
-    day = now->day();
+    previous_mode = mode;
+    mode = nvmode;
+    Serial.println(nvmode);
+    if (mode == 1)
+    {
+      inactivite = millis();
+    }
   }
 }
 
 void setup()
 {
-  mode_standard();
+  Serial.begin(115200);
+  for (int i = 0; i < 9; i++)
+  {
+    capteurs[i] = (Capteur *)calloc(1, sizeof(Capteur));
+    capteurs[i]->type = i;
+  }
+  gestionnaire_mode(0);
+}
+
+void get_commande()
+{
+  int i;
+  int MIN;
+  int MAX;
+
+  if (Serial.available() != 0)
+  {
+    inactivite = millis();
+  }
 }
 
 void loop()
 {
-  if (mode == 1)
+  if (mode == 0)
     enregistrement();
+  if (mode == 1 && millis() - inactivite >= 30000)
+    gestionnaire_mode(0);
+  else
+  {
+    get_commande();
+  }
   delay(1e3);
 }
