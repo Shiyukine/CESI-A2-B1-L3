@@ -104,16 +104,16 @@ int bouton_test;
 int file_max_size = 2048;
 int compteur_taille_fichier = 0;
 int compteur_revision = 0;
-int mode = 0;
+int mode = -1;
 Capteur *capteurs[9];
 int year;
 int month;
 int day;
-int previous_mode = -1;
+int previous_mode = -2;
 int inactivite = 0;
 
 int etatled = 0;
-int code_couleur = 2;
+int code_couleur = -1;
 int compteur_sec = 0;
 
 SdFat32 *SD;
@@ -134,11 +134,6 @@ void clearBufferArray() // function to clear buffer array
     buffer[i] = NULL;
   } // clear all index of array with command NULL
 }
-
-//------
-
-// Instance du RTC
-RTC_DS1307 RTC;
 
 // Converti le numéro de jour en jour /!\ la semaine commence un dimanche
 String donne_jour_semaine(uint8_t j)
@@ -174,20 +169,20 @@ String Vers2Chiffres(byte nombre)
 }
 
 // affiche la date et l'heure sur l'écran
-void affiche_date_heure(DateTime datetime)
+void affiche_date_heure(DateTime *datetime)
 {
 
   // Date
-  String jour = donne_jour_semaine(datetime.dayOfTheWeek()) + " " +
-                Vers2Chiffres(datetime.day()) + "/" +
-                Vers2Chiffres(datetime.month()) + "/" +
-                String(datetime.year(), DEC);
+  String jour = donne_jour_semaine(datetime->dayOfTheWeek()) + " " +
+                Vers2Chiffres(datetime->day()) + "/" +
+                Vers2Chiffres(datetime->month()) + "/" +
+                String(datetime->year(), DEC);
 
   // heure
   String heure = "";
-  heure = Vers2Chiffres(datetime.hour()) + ":" +
-          Vers2Chiffres(datetime.minute()) + ":" +
-          Vers2Chiffres(datetime.second());
+  heure = Vers2Chiffres(datetime->hour()) + ":" +
+          Vers2Chiffres(datetime->minute()) + ":" +
+          Vers2Chiffres(datetime->second());
 
   // affichage sur l'écran
   Serial.println(jour + " | " + heure);
@@ -201,97 +196,7 @@ int lum_PIN = A1;
 int lum_val;
 
 // Instance du BMP(Pression)
-Adafruit_BMP280 bmp;
-
-File *changement_fichier(int mess_size)
-{
-  DateTime *now = &rtc->now();
-  static File actualFile;
-  static bool firstcall = true;
-  if (firstcall)
-  {
-    String aa = String(now->year());
-    aa = String(aa[2]) + String(aa[3]);
-    String mm = String(now->month());
-    if (now->month() < 10)
-      mm = "0" + mm;
-    String jj = String(now->day());
-    if (now->day() < 10)
-      jj = "0" + jj;
-    actualFile = SD->open(aa + mm + jj + "_" + String(compteur_revision) + ".LOG", O_RDWR | O_CREAT | O_TRUNC);
-  }
-  firstcall = false;
-  if (!actualFile)
-    gestionnaire_erreur(ERR_SD_IO);
-  bool changeFile = false;
-  if (actualFile.position() + mess_size > file_max_size)
-  {
-    compteur_revision++;
-    changeFile = true;
-    compteur_taille_fichier = 0;
-  }
-  if (year != now->year() && month != now->month() && day != now->day())
-  {
-    compteur_revision = 0;
-    year = now->year();
-    month = now->month();
-    day = now->day();
-    changeFile = true;
-  }
-  if (changeFile)
-  {
-    String aa = String(now->year());
-    aa = String(aa[2]) + String(aa[3]);
-    String mm = String(now->month());
-    if (now->month() < 10)
-      mm = "0" + mm;
-    String jj = String(now->day());
-    if (now->day() < 10)
-      jj = "0" + jj;
-    Serial.println("Copy to " + aa + mm + jj + "_" + String(compteur_revision) + ".LOG");
-    File newFile = SD->open(aa + mm + jj + "_" + String(compteur_revision) + ".LOG", O_RDWR | O_CREAT | O_TRUNC);
-    if (!newFile)
-    {
-      compteur_revision--;
-      gestionnaire_erreur(ERR_SD_IO);
-    }
-    else
-    {
-      actualFile.seek(0);
-      while (actualFile.available())
-      {
-        int lastPos = actualFile.position();
-        newFile.write(actualFile.read());
-        if (lastPos == actualFile.position())
-        {
-          gestionnaire_erreur(ERR_SD_PLEIN);
-          break;
-        }
-      }
-      newFile.flush();
-      newFile.close();
-      actualFile.seek(0);
-      Serial.println(F("Changed file"));
-    }
-  }
-  return &actualFile;
-}
-
-void enregistrement()
-{
-  String mess = "";
-  File *actualFile = changement_fichier(mess.length());
-  for (int i = 0; i < sizeof(capteurs) / sizeof(capteurs[0]); i++)
-  {
-    mess += "Capteur " + String(i) + " : " + capteurs[i]->dernieres_valeurs[capteurs[i]->tableau_valeurs_index];
-  }
-  int pos = actualFile->position();
-  actualFile->println(mess);
-  if (pos == actualFile->position())
-    gestionnaire_erreur(ERR_SD_PLEIN);
-  else
-    actualFile->flush();
-}
+Adafruit_BMP280 *bmp;
 
 void setup()
 {
@@ -327,17 +232,12 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(2), timer, CHANGE); // interruptions materielles pour les 2 boutons.
   attachInterrupt(digitalPinToInterrupt(3), timer, CHANGE);
 
-  Serial.println("Mode de lancement : " + String(mode));
+  // Serial.println("Mode de lancement : " + String(mode));
 
   for (int i = 0; i < 9; i++) // allocation mémoire des capteurs de la structure.
   {
     capteurs[i] = (Capteur *)calloc(1, sizeof(Capteur));
     capteurs[i]->type = i;
-  }
-
-  for (int i = 0; i < 9; i++)
-  {
-    Serial.println("Listes des capteurs : " + String(capteurs[i]->type));
   }
 
   for (int i = 0; i < 3; i++) // Mise a défauts des caractéristiques de tous les capteurs.
@@ -364,21 +264,17 @@ void setup()
   dht.begin();
 
   // BMP
-  if (!bmp.begin(0x76))
+  bmp = new Adafruit_BMP280();
+  if (!bmp->begin(0x76))
     gestionnaire_erreur(ERR_CAPTEUR_ACCES);
   //---
-
-  // RTC
-  Wire.begin();
-  if (!RTC.begin())
-    gestionnaire_erreur(ERR_CAPTEUR_ACCES);
-
-  // RTC
-  Wire.begin();
-  RTC.begin();
+  rtc->begin();
 
   Serial.print("\n");
-  DateTime now = RTC.now();
+  DateTime *now = &rtc->now();
+  year = now->year();
+  month = now->month();
+  day = now->day();
 
   affiche_date_heure(now);
 
@@ -463,7 +359,7 @@ ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
         compteur_sec++;
       }
     }
-    Serial.println("Erreur accès horloge RTC");
+    Serial.println(F("Erreur accès horloge RTC"));
   }
 
   if (code_couleur == 5)
@@ -496,7 +392,7 @@ ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
         compteur_sec++;
       }
     }
-    Serial.println("Erreur accès GPS");
+    Serial.println(F("Erreur accès GPS"));
   }
 
   if (code_couleur == 3)
@@ -529,7 +425,7 @@ ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
         compteur_sec++;
       }
     }
-    Serial.println("Erreur accès capteur");
+    Serial.println(F("Erreur accès capteur"));
   }
 
   if (code_couleur == 4)
@@ -562,7 +458,7 @@ ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
         compteur_sec++;
       }
     }
-    Serial.println("Erreur données incohérentes // Vérification matérielle requise");
+    Serial.println(F("Erreur données incohérentes // Vérification matérielle requise"));
   }
 
   if (code_couleur == 0)
@@ -597,7 +493,7 @@ ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
         compteur_sec++;
       }
     }
-    Serial.println("Erreur : Carte SD pleine");
+    Serial.println(F("Erreur : Carte SD pleine"));
   }
 
   if (code_couleur == 1)
@@ -632,7 +528,7 @@ ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
         compteur_sec++;
       }
     }
-    Serial.println("Erreur accès/écriture sur carte SD");
+    Serial.println(F("Erreur accès/écriture sur carte SD"));
   }
 }
 
@@ -735,52 +631,52 @@ void loop() // test de loop rapide (a ne pas prendre en compte)
       coordonnee[1] = atof(longitude);
       free(longitude);
     }
-    Serial.print("\nLatitude: ");
+    Serial.print(F("\nLatitude: "));
     Serial.println(coordonnee[0]);
-    Serial.print("Longitude: ");
+    Serial.print(F("Longitude: "));
     Serial.println(coordonnee[1]);
 
     // DHT
-    Serial.print("température:");
+    Serial.print(F("température:"));
     Serial.println(dht.readTemperature());
-    Serial.print("humidité:");
+    Serial.print(F("humidité:"));
     Serial.println(dht.readHumidity());
 
     // Lumière
     lum_val = analogRead(lum_PIN);
-    Serial.print("Valeur luminosité :");
+    Serial.print(F("Valeur luminosité :"));
     Serial.println(lum_val);
 
     // Pression
-    Serial.print("Pression:");
-    Serial.println(bmp.readPressure() / 100);
+    Serial.print(F("Pression:"));
+    Serial.println(bmp->readPressure() / 100);
 
     // Temperature eau
-    Serial.print("Temperature eau : ");
+    Serial.print(F("Temperature eau : "));
     float t_eau = rand() % 30;
     Serial.print(t_eau);
-    Serial.println(" °C");
+    Serial.println(F(" °C"));
 
     // courant marin
-    Serial.print("Courant marin : ");
+    Serial.print(F("Courant marin : "));
     float c_marin = rand() % 5;
     Serial.print(c_marin);
-    Serial.println(" noeud");
+    Serial.println(F(" noeud"));
 
     // Force du vent
-    Serial.print("Force du vent : ");
+    Serial.print(F("Force du vent : "));
     float f_vent = rand() % 30;
     Serial.print(f_vent);
-    Serial.println(" metre/seconde");
+    Serial.println(F(" metre/seconde"));
 
     // Taux de particule fine
-    Serial.print("Taux de particule fine : ");
+    Serial.print(F("Taux de particule fine : "));
     float partic = rand() % 200;
     Serial.print(partic);
-    Serial.println(" microgramme/metre^3");
+    Serial.println(F(" microgramme/metre^3"));
 
-    if (dht.readTemperature() > 40 || dht.readTemperature() < -10 || lum_val > 25000 || lum_val < 0 || bmp.readPressure() / 100 < 900 ||
-        bmp.readPressure() / 100 > 1050 || t_eau > 29 || c_marin > 4 || f_vent > 28 || partic > 170)
+    if (dht.readTemperature() > 40 || dht.readTemperature() < -10 || lum_val > 25000 || lum_val < 0 || bmp->readPressure() / 100 < 900 ||
+        bmp->readPressure() / 100 > 1050 || t_eau > 29 || c_marin > 4 || f_vent > 28 || partic > 170)
       gestionnaire_erreur(ERR_CAPTEUR_INCOHERENTE);
     // enregistrement();
     delay(2000);
@@ -992,7 +888,7 @@ void get_commande() // fonction pour les commandes en mode config.
       }
       else
       {
-        Serial.println("Valeur trop basse pour LOG_INTERVAL !\n");
+        Serial.println(F("Valeur trop basse pour LOG_INTERVAL !\n"));
       }
     }
 
@@ -1006,7 +902,7 @@ void get_commande() // fonction pour les commandes en mode config.
       }
       else
       {
-        Serial.println("Valeur incohérente pour FILE_MAX_SIZE !\n");
+        Serial.println(F("Valeur incohérente pour FILE_MAX_SIZE !\n"));
       }
     }
 
@@ -1049,7 +945,7 @@ void get_commande() // fonction pour les commandes en mode config.
       }
       else
       {
-        Serial.println("NTM CA MARCHE PAS TA VALEUR !!!");
+        Serial.println(F("RIP !!!"));
       }
     }
 
