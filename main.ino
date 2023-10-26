@@ -187,17 +187,9 @@ void loop()
 {
   if (mode == MODE_CONFIGURATION)  // A REVOIR
   {
-    int temps = millis();
     get_commande();
-    /*
-    if (temps > 100) 
-    {
-      gestionnaire_modes(MODE_STANDARD);
-    }*/
   }
-  //Serial.println(mode);
-  //Serial.println("previous" + String(previous_mode));
-  //delay(1000);
+ 
 }
 
 
