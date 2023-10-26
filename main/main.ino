@@ -41,7 +41,7 @@
 #define button1 2
 #define button2 3
 
-typedef struct
+typedef struct // Structure de nos capteurs.
 {
   int type;
   int min;
@@ -54,7 +54,7 @@ typedef struct
   int moyenne;
 } Capteur;
 
-Capteur *capteurs[9];
+Capteur *capteurs[9]; // tableau contenant nos 9 capteurs
 
 int log_interval;
 int file_max_size;
@@ -83,19 +83,19 @@ int bouton_test;
 void setup()
 
 {
-  Serial.begin(9600);
+  Serial.begin(9600); // lancement du port serie.
 
-  cli();
-  pinMode(button1, INPUT);
-  pinMode(button2, INPUT);
-  pinMode(9, OUTPUT);  // Vert
-  pinMode(10, OUTPUT); // Rouge
-  pinMode(11, OUTPUT); // Bleu
+  cli();                   // désactive les interruptions.
+  pinMode(button1, INPUT); // Etablissement des pins
+  pinMode(button2, INPUT); //
+  pinMode(9, OUTPUT);      // Vert
+  pinMode(10, OUTPUT);     // Rouge
+  pinMode(11, OUTPUT);     // Bleu
 
-  mode = MODE_STANDARD;
-  digitalWrite(9, HIGH);
+  mode = MODE_STANDARD;  // Si on ne fait rien au démarrage, la station est en mode standard.
+  digitalWrite(9, HIGH); // Allulage LED verte.
 
-  while (digitalRead(3) == HIGH)
+  while (digitalRead(3) == HIGH) // Si on appuie sur le bouton 2, le mode configuration se lance.
   {
     mode = MODE_CONFIGURATION;
     digitalWrite(11, HIGH);
@@ -103,16 +103,16 @@ void setup()
     digitalWrite(9, HIGH);
   }
 
-  sei();
+  sei(); // Reactivation des interruptions.
 
-  attachInterrupt(digitalPinToInterrupt(2), timer, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(2), timer, CHANGE); // interruptions materielles pour les 2 boutons.
   attachInterrupt(digitalPinToInterrupt(3), timer, CHANGE);
-  TCCR1A = 0;
-  TCCR1B = 0;
+  TCCR1A = 0; // désactivez tous les modes de fonctionnement spéciaux et configurez le timer en mode normal
+  TCCR1B = 0; // désactivez le Timer 1 en configurant le préscaleur à 0
 
   Serial.println("Mode de lancement : " + String(mode));
 
-  for (int i = 0; i < 9; i++)
+  for (int i = 0; i < 9; i++) // allocation mémoire des capteurs de la structure.
   {
     capteurs[i] = calloc(1, sizeof(Capteur));
     capteurs[i]->type = i;
@@ -123,7 +123,7 @@ void setup()
     Serial.println("Listes des capteurs : " + String(capteurs[i]->type));
   }
 
-  for (int i = 0; i < 3; i++)
+  for (int i = 0; i < 3; i++) // Mise a défauts des caractéristiques de tous les capteurs.
   {
     capteurs[i]->timeout = DEFAULT_TIMEOUT_CAPTEUR; // reset du timeout des capteurs
     capteurs[i]->actif = DEFAULT_ACTIVATION;        // reset de l'etat des capteurs
@@ -143,79 +143,62 @@ void setup()
 } // fin setup
 
 void timer()
-{
+{ // fonction d'interruption logiciel appelé par l'attachInterrupt.
 
-  TCNT1 = 0;
-  TCCR1B |= B00000101;
-  TIMSK1 |= B00000010;
-  OCR1A = 39063; // 2.5s Finally we set compare register B to this value
-
-  for (int i = 0; i < 3; i++)
-  {
-    capteurs[i]->timeout = DEFAULT_TIMEOUT_CAPTEUR; // reset du timeout des capteurs
-    capteurs[i]->actif = DEFAULT_ACTIVATION;        // reset de l'etat des capteurs
-  }
-  capteurs[0]->min = DEFAULT_LUMIN_LOW; // reset des valeurs de la luminosite
-  capteurs[0]->max = DEFAULT_LUMIN_HIGH;
-
-  capteurs[1]->min = DEFAULT_MIN_TEMP; // reset des valeurs de la temperature
-  capteurs[1]->max = DEFAULT_MAX_TEMP;
-
-  capteurs[2]->min = DEFAULT_HYGR_MINT; // reset des valeurs de l'hygrometrie
-  capteurs[2]->max = DEFAULT_HYGR_MAXT;
-
-  capteurs[3]->min = DEFAULT_PRESSURE_MIN; // reset des valeurs de la pression
-  capteurs[3]->max = DEFAULT_PRESSURE_MAX;
+  TCNT1 = 0;           // compteur du timer a 0.
+  TCCR1B |= B00000101; // configure le registre TCCR1B pour activer le Timer 1 en mode CTC avec un préscaleur de 1024.
+  TIMSK1 |= B00000010; // Cela active l'interruption de correspondance avec le registre OCR1A pour le Timer 1.
+  OCR1A = 39063;       // configure la valeur de comparaison du Timer 1 à 39063. (2.5 secondes.)
 }
 
-ISR(TIMER1_COMPA_vect)
+ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
 {
-  switch (mode) // 2 rouge // 3 jaune
+  switch (mode) // Différents cas.
   {
-  case MODE_STANDARD:
-    if (digitalRead(2) == HIGH)
+  case MODE_STANDARD:           // mode = 0
+    if (digitalRead(2) == HIGH) // si on est en mode standard, et qu'on appui sur le bouton 2.
     {
-      gestionnaire_modes(MODE_MAINTENANCE);
-      break;
+      gestionnaire_modes(MODE_MAINTENANCE); // appel le gestionnaire de mode avec le nouveau mode.
+      break;                                // stop le switch case
     }
-    if (digitalRead(3) == HIGH)
+    if (digitalRead(3) == HIGH) // si on est en mode standard, et qu'on appui sur le bouton 3.
     {
       gestionnaire_modes(MODE_ECO);
       break;
     }
 
-  case MODE_ECO:
-    if (digitalRead(3) == HIGH)
+  case MODE_ECO:                // mode = 3
+    if (digitalRead(3) == HIGH) // si on est en mode eco, et qu'on appui sur le bouton 3.
     {
       gestionnaire_modes(MODE_STANDARD);
       break;
     }
-    if (digitalRead(2) == HIGH)
+    if (digitalRead(2) == HIGH) // si on est en mode eco, et qu'on appui sur le bouton 2.
     {
       gestionnaire_modes(MODE_MAINTENANCE);
       break;
     }
 
-  case MODE_MAINTENANCE:
+  case MODE_MAINTENANCE: // mode = 2
     if (digitalRead(2) == HIGH)
     {
-      gestionnaire_modes(previous_mode);
+      gestionnaire_modes(previous_mode); // appel le gestionnaire de mode avec l'ancien mode.
       break;
     }
   }
 }
 
-void loop()
+void loop() // test de loop rapide (a ne pas prendre en compte)
 {
-  if (mode == MODE_CONFIGURATION) // A REVOIR
+  if (mode == MODE_CONFIGURATION)
   {
-    get_commande();
+    get_commande(); // appel de get commande en monde configuration.
   }
 }
 
-void gestionnaire_modes(int nvmode)
+void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode comme parametre.
 {
-  previous_mode = mode;
+  previous_mode = mode; // le mode actuel devient l'ancien mode.
 
   switch (nvmode)
   {
@@ -223,9 +206,10 @@ void gestionnaire_modes(int nvmode)
     digitalWrite(9, HIGH);
     digitalWrite(10, LOW);
     digitalWrite(11, LOW); // en vert
+
     for (int i = 0; i < sizeof(capteurs) / 2; i++)
     {
-      capteurs[i]->actif = 1;
+      capteurs[i]->actif = 1; // active tout les capteurs en standard.
     }
     break;
 
@@ -236,7 +220,7 @@ void gestionnaire_modes(int nvmode)
     digitalWrite(11, LOW); // en jaune
     for (int i = 0; i < sizeof(capteurs) / 2; i++)
     {
-      capteurs[i]->actif = 0;
+      capteurs[i]->actif = 0; // desactive tout les capteurs en config.
     }
     break;
 
@@ -246,7 +230,7 @@ void gestionnaire_modes(int nvmode)
     digitalWrite(9, LOW); // en violet (au lieu de orange)
     for (int i = 0; i < sizeof(capteurs) / 2; i++)
     {
-      capteurs[i]->actif = 1;
+      capteurs[i]->actif = 1; // active tout les capteurs en maintenance.
     }
     break;
 
@@ -259,15 +243,15 @@ void gestionnaire_modes(int nvmode)
     {
       if (capteurs[i]->type == 5 || capteurs[i]->type == 6 || capteurs[i]->type == 7 || capteurs[i]->type == 8)
       {
-        capteurs[i]->actif = 0;
+        capteurs[i]->actif = 0; // desactive les capteurs non prioritaires dans le mode eco.
       }
       else
         capteurs[i]->actif = 1;
     }
     break;
   }
-  mode = nvmode;
-  Serial.println("previous mode : " + String(previous_mode));
+  mode = nvmode;                                              // on actualise le nouveau mode.
+  Serial.println("previous mode : " + String(previous_mode)); // affichage
   Serial.println("Changement de mode : " + String(mode));
   for (int i = 0; i < sizeof(capteurs) / 2; i++)
   {
@@ -275,52 +259,52 @@ void gestionnaire_modes(int nvmode)
   }
 }
 
-void get_commande()
+void get_commande() // fonction pour les commandes en mode config.
 {
-  int i;
-  int MIN;
-  int MAX;
+  int i;   // index pour les futurs capteurs que nous allons modifier.
+  int MIN; // valeur pour modifier les min et max des capteurs.
+  int MAX; // valeur pour modifier les min et max des capteurs.
 
-  if (Serial.available() != 0)
+  if (Serial.available() != 0) // si on ecrit dans le port serie.
   {
-    String command = Serial.readStringUntil('=');
-    int value = Serial.readStringUntil('\n').toInt();
+    String command = Serial.readStringUntil('=');     // command = la commande ecrite avant le "=".
+    int value = Serial.readStringUntil('\n').toInt(); // value = la valeur ecrite apres le "=".
 
     Serial.println(command);
 
-    if (command.startsWith("LUMIN"))
+    if (command.startsWith("LUMIN")) // si la commande comment par LUMIN
     {
-      i = 0;
+      i = 0; // actualisation en fonction des des capteurs.
       MIN = 0;
       MAX = 1023;
     }
 
-    else if (command.startsWith("TEMP_AIR"))
+    else if (command.startsWith("TEMP_AIR")) // si la commande comment par TEMP_AIR
     {
-      i = 1;
+      i = 1; // actualisation en fonction des des capteurs.
       MIN = -40;
       MAX = 85;
     }
 
-    else if (command.startsWith("HYGR"))
+    else if (command.startsWith("HYGR")) // si la commande comment par HYGR
     {
-      i = 2;
+      i = 2; // actualisation en fonction des des capteurs.
       MIN = -40;
       MAX = 85;
     }
 
-    else if (command.startsWith("PRESSURE"))
+    else if (command.startsWith("PRESSURE")) // si la commande comment par PRESSURE
     {
-      i = 3;
+      i = 3; // actualisation en fonction des des capteurs.
       MIN = 300;
       MAX = 1100;
     }
 
     if (command == "LUMIN" || command == "TEMP_AIR" || command == "HYGR" || command == "PRESSURE")
     {
-      if (value == 0 || value == 1)
+      if (value == 0 || value == 1) // si la valeur est bonne.
       {
-        capteurs[i]->actif = value;
+        capteurs[i]->actif = value; // change l etat actif des capteurs
         Serial.println("succès de l'operation !!");
         /*
                 for (int i; i < 9; i++)
@@ -328,18 +312,18 @@ void get_commande()
                   Serial.println("Etat des capteurs apres config : " + String(capteurs[i]->actif));
                 }*/
       }
-      else
+      else // cas d'erreurs
       {
         Serial.println("veuillez entrer une valeur entre 0 et 1.\n");
       }
       command = "None";
     }
 
-    if (command.indexOf("MIN") > 0)
+    if (command.indexOf("MIN") > 0) // si la commande contient "MIN".
     {
-      if (value > MIN && value < MAX)
+      if (value > MIN && value < MAX) // Si les valeurs sont bonnes dans la commande.
       {
-        capteurs[i]->min = value;
+        capteurs[i]->min = value; // actualisation des minimum des capteurs.
         Serial.println("succès de l'operation !!");
         /*
                 for (int i; i < 9; i++)
@@ -347,38 +331,38 @@ void get_commande()
                   Serial.println("Etat des minimum apres config : " + String(capteurs[i]->min));
                 }*/
       }
-      else
+      else // cas d'erreur
       {
         Serial.println("veuillez entrer une valeur entre " + String(MIN) + " et " + String(MAX) + ".\n");
       }
       command = "None";
     }
 
-    if (command.indexOf("MAX") > 0)
+    if (command.indexOf("MAX") > 0) // si la commande contient "MAX".
     {
-      if (value > MIN && value < MAX)
+      if (value > MIN && value < MAX) // Verifie les valeurs.
       {
-        capteurs[i]->max = value;
+        capteurs[i]->max = value; // acutalise les valeurs max des capteurs.
         Serial.println("succès de l'operation !!");
 
-        for (int i; i < 9; i++)
+        for (int i; i < 9; i++) // affichage
         {
           Serial.println("Etat des maximum apres config : " + String(capteurs[i]->max));
         }
       }
 
-      else
+      else // cas de commande fausse.
       {
         Serial.println("veuillez entrer une valeur entre " + String(MIN) + " et " + String(MAX) + ".\n");
       }
       command = "None";
     }
 
-    if (command == "LOG_INTERVALL")
+    if (command == "LOG_INTERVAL") // si la commande est de modifier le LOG_INTERVAL
     {
       if (value > 0)
       {
-        log_interval = value;
+        log_interval = value; // actualisation de LOG_INTERVAL
 
         Serial.println("Nouvelle valeur de log_interval : " + String(log_interval));
       }
@@ -388,11 +372,11 @@ void get_commande()
       }
     }
 
-    if (command == "FILE_SIZE")
+    if (command == "FILE_SIZE") // si la commande est de modifier le FILE_SIZE
     {
-      if (value < 16384 && value > 512)
+      if (value < 16384 && value > 512) // si la valeur est bonne.
       {
-        file_max_size = value;
+        file_max_size = value; // actualisation de la taille
 
         Serial.println("Nouvelle valeur de file_max_size : " + String(file_max_size));
       }
@@ -402,9 +386,9 @@ void get_commande()
       }
     }
 
-    if (command == "RESET")
+    if (command == "RESET") // si la commande est RESET.
     {
-      file_max_size = DEFAULT_FILE_MAX_SIZE;
+      file_max_size = DEFAULT_FILE_MAX_SIZE; // reset TOUTE les valeurs pouvant etre modifiées.
       log_interval = DEFAULT_LOG_INTERVAL;
       for (int i = 0; i < 3; i++)
       {
@@ -424,18 +408,18 @@ void get_commande()
       capteurs[3]->max = DEFAULT_PRESSURE_MAX;
     }
 
-    if (command == "VERSION")
+    if (command == "VERSION") // commande d affichage de version.
     {
       Serial.println("Version : " + String(version));
     }
 
-    if (command == "TIMEOUT")
+    if (command == "TIMEOUT") // si la commande est de modifier le TIMEOUT.
     {
-      if (value > 0)
+      if (value > 0) // si la valeur est bonne.
       {
         for (int i = 0; i < 9; i++)
         {
-          capteurs[i]->timeout = value;
+          capteurs[i]->timeout = value; // actualisation des timeout des capteurs.
         }
         Serial.println("timeout : " + String(value));
       }
@@ -445,7 +429,7 @@ void get_commande()
       }
     }
 
-    for (int i = 0; i < 9; i++)
+    for (int i = 0; i < 9; i++) // affichage
     {
       Serial.println("Nouvelles valeurs actives des capteurs : " + String(capteurs[i]->actif));
       Serial.println("Nouvelles valeurs des seuil MIN : " + String(capteurs[i]->min));
