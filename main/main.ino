@@ -108,7 +108,6 @@ void change_mode(int nvmode)
 void setup()
 {
   Serial.begin(115200);
-  Serial.println(String("nulnuuuuuuuwaittttdjgfsgfsdd").indexOf("aa") > 0);
   for (int i = 0; i < 9; i++)
   {
     capteurs[i] = (Capteur *)calloc(1, sizeof(Capteur));
