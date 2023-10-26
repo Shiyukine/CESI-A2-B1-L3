@@ -273,9 +273,8 @@ void get_commande()
 
   if (Serial.available() != 0)
   {
-    String command = Serial.readStringUntil('=');
+    String command = Serial.readStringUntil('=').trim();
     int value = Serial.readStringUntil('\n').toInt();
-    Serial.flush();
 
     if(command.startsWith("LUMIN"))
     {
@@ -304,9 +303,6 @@ void get_commande()
       MIN = 300;
       MAX = 1100;
     }
-    Serial.println(String(command));
-    Serial.println(String(MIN)+" "+String(MAX));
-    Serial.println(String(i));
 
 //0; //'luminosite';
 //1; //'temperature';
