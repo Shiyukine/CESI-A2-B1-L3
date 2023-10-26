@@ -113,7 +113,6 @@ void setup()
     capteurs[i] = (Capteur *)calloc(1, sizeof(Capteur));
     capteurs[i]->type = i;
   }
-  // Serial.println(String("blabla").indexOf("c") > 0);
   change_mode(1);
 }
 
