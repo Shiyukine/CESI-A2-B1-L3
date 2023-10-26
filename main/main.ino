@@ -107,11 +107,6 @@ int compteur_sec = 0;
 SdFat32 *SD;
 RTC_DS1307 *rtc;
 
-void erreur(int erreur)
-{
-  Serial.println("Error " + String(erreur));
-}
-
 File *changement_fichier(int mess_size)
 {
   DateTime *now = &rtc->now();
@@ -131,7 +126,7 @@ File *changement_fichier(int mess_size)
   }
   firstcall = false;
   if (!actualFile)
-    erreur(1);
+    gestionnaire_erreur(ERR_SD_IO);
   bool changeFile = false;
   if (actualFile.position() + mess_size > file_max_size)
   {
@@ -162,7 +157,7 @@ File *changement_fichier(int mess_size)
     if (!newFile)
     {
       compteur_revision--;
-      erreur(5);
+      gestionnaire_erreur(ERR_SD_IO);
     }
     else
     {
@@ -173,7 +168,7 @@ File *changement_fichier(int mess_size)
         newFile.write(actualFile.read());
         if (lastPos == actualFile.position())
         {
-          erreur(2);
+          gestionnaire_erreur(ERR_SD_PLEIN);
           break;
         }
       }
@@ -188,20 +183,16 @@ File *changement_fichier(int mess_size)
 
 void enregistrement()
 {
-  char mess[] = "Capteur 1 = 25, Capteur 2 = 25, Capteur 3 = 25, Capteur 4 = 25, Capteur 5 = 25, Capteur 6 = 25, Capteur 7 = 25, Capteur 8 = 25, Capteur 9 = 25 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-  File *actualFile = changement_fichier(sizeof(mess) / sizeof(mess[0]));
-  /*for (int i = 0; i < sizeof(capteurs) / sizeof(capteurs[0]); i++)
+  String mess = "";
+  File *actualFile = changement_fichier(mess.length());
+  for (int i = 0; i < sizeof(capteurs) / sizeof(capteurs[0]); i++)
   {
-      if (actualFile->availableForWrite())
-          actualFile->print("25 ");
-      else
-          erreur(20);
-      actualFile->flush();
-  }*/
+    mess += "Capteur " + String(i) + " : " + capteurs[i]->dernieres_valeurs[capteurs[i]->tableau_valeurs_index];
+  }
   int pos = actualFile->position();
   actualFile->println(mess);
   if (pos == actualFile->position())
-    erreur(21);
+    gestionnaire_erreur(ERR_SD_PLEIN);
   else
     actualFile->flush();
 }
@@ -228,12 +219,17 @@ void setup()
     digitalWrite(9, HIGH);
   }
 
+  TCCR1A = 0;          // Reset TCCR1A à 0 (timer + comparateur)
+  TCCR1B = 0;          // Reset TCCR1A à 0 (timer + comparateur)
+  TCCR1B |= B00000100; // Met CS12 à 1 pour un prescaler à 256 (limite)
+  TIMSK1 |= B00000010; // Met OCIE1A à 1 pour comparer le comparer au match A
+
+  OCR1A = 31250;
+
   sei(); // Reactivation des interruptions.
 
   attachInterrupt(digitalPinToInterrupt(2), timer, CHANGE); // interruptions materielles pour les 2 boutons.
   attachInterrupt(digitalPinToInterrupt(3), timer, CHANGE);
-  TCCR1A = 0; // désactivez tous les modes de fonctionnement spéciaux et configurez le timer en mode normal
-  TCCR1B = 0; // désactivez le Timer 1 en configurant le préscaleur à 0
 
   Serial.println("Mode de lancement : " + String(mode));
 
@@ -268,48 +264,254 @@ void setup()
 } // fin setup
 
 void timer()
-{ // fonction d'interruption logiciel appelé par l'attachInterrupt.
-
+{                      // fonction d'interruption logiciel appelé par l'attachInterrupt.
+  cli();               // Stop interrupts
   TCNT1 = 0;           // compteur du timer a 0.
   TCCR1B |= B00000101; // configure le registre TCCR1B pour activer le Timer 1 en mode CTC avec un préscaleur de 1024.
   TIMSK1 |= B00000010; // Cela active l'interruption de correspondance avec le registre OCR1A pour le Timer 1.
-  OCR1A = 39063;       // configure la valeur de comparaison du Timer 1 à 39063. (2.5 secondes.)
+  OCR1A = 31250;       // configure la valeur de comparaison du Timer 1 à 39063. (2.5 secondes.)
+  sei();               // Reactivation des interruptions.
 }
 
 ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
 {
-  switch (mode) // Différents cas.
+  if (mode != previous_mode)
   {
-  case MODE_STANDARD:           // mode = 0
-    if (digitalRead(2) == HIGH) // si on est en mode standard, et qu'on appui sur le bouton 2.
+    switch (mode) // Différents cas.
     {
-      gestionnaire_modes(MODE_MAINTENANCE); // appel le gestionnaire de mode avec le nouveau mode.
-      break;                                // stop le switch case
-    }
-    if (digitalRead(3) == HIGH) // si on est en mode standard, et qu'on appui sur le bouton 3.
-    {
-      gestionnaire_modes(MODE_ECO);
-      break;
-    }
+    case MODE_STANDARD:           // mode = 0
+      if (digitalRead(2) == HIGH) // si on est en mode standard, et qu'on appui sur le bouton 2.
+      {
+        gestionnaire_modes(MODE_MAINTENANCE); // appel le gestionnaire de mode avec le nouveau mode.
+        break;                                // stop le switch case
+      }
+      if (digitalRead(3) == HIGH) // si on est en mode standard, et qu'on appui sur le bouton 3.
+      {
+        gestionnaire_modes(MODE_ECO);
+        break;
+      }
 
-  case MODE_ECO:                // mode = 3
-    if (digitalRead(3) == HIGH) // si on est en mode eco, et qu'on appui sur le bouton 3.
-    {
-      gestionnaire_modes(MODE_STANDARD);
-      break;
-    }
-    if (digitalRead(2) == HIGH) // si on est en mode eco, et qu'on appui sur le bouton 2.
-    {
-      gestionnaire_modes(MODE_MAINTENANCE);
-      break;
-    }
+    case MODE_ECO:                // mode = 3
+      if (digitalRead(3) == HIGH) // si on est en mode eco, et qu'on appui sur le bouton 3.
+      {
+        gestionnaire_modes(MODE_STANDARD);
+        break;
+      }
+      if (digitalRead(2) == HIGH) // si on est en mode eco, et qu'on appui sur le bouton 2.
+      {
+        gestionnaire_modes(MODE_MAINTENANCE);
+        break;
+      }
 
-  case MODE_MAINTENANCE: // mode = 2
-    if (digitalRead(2) == HIGH)
-    {
-      gestionnaire_modes(previous_mode); // appel le gestionnaire de mode avec l'ancien mode.
-      break;
+    case MODE_MAINTENANCE: // mode = 2
+      if (digitalRead(2) == HIGH)
+      {
+        gestionnaire_modes(previous_mode); // appel le gestionnaire de mode avec l'ancien mode.
+        break;
+      }
     }
+  }
+  // gestionnaire erreur
+  if (code_couleur == 2)
+  { // Erreur Horloge RTC
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(B, 0);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 0);
+        analogWrite(B, 255);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println("Erreur accès horloge RTC");
+  }
+
+  if (code_couleur == 5)
+  { // Erreur GPS
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 0);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 255);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println("Erreur accès GPS");
+  }
+
+  if (code_couleur == 3)
+  { // Erreur accès capteurs
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 0);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 0);
+        analogWrite(V, 255);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println("Erreur accès capteur");
+  }
+
+  if (code_couleur == 4)
+  { // Erreur incohérence
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 0);
+        analogWrite(V, 255);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 3)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 0);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println("Erreur données incohérentes // Vérification matérielle requise");
+  }
+
+  if (code_couleur == 0)
+  { // Erreur carte SD pleine
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 0);
+        analogWrite(B, 0);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 255);
+        analogWrite(B, 255);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println("Erreur : Carte SD pleine");
+  }
+
+  if (code_couleur == 1)
+  { // Erreur accès/écriture carte SD
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 255);
+        analogWrite(V, 255);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 3)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 0);
+        analogWrite(V, 0);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println("Erreur accès/écriture sur carte SD");
   }
 }
 
@@ -347,7 +549,7 @@ void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode
     if (!SD->begin(4))
     {
       Serial.println(F("initialization failed!"));
-      erreur(13);
+      gestionnaire_erreur(ERR_SD_IO);
     }
     else
     {
@@ -591,4 +793,39 @@ void get_commande() // fonction pour les commandes en mode config.
       Serial.println("Nouvelles valeurs des seuil MAX : " + String(capteurs[i]->max));
     }
   }
+}
+
+void gestionnaire_erreur(int erreur)
+{
+  if (erreur == ERR_SD_PLEIN)
+  { // Erreur 0 pour carte SD pleine
+    code_couleur = erreur;
+  }
+
+  if (erreur == ERR_SD_IO)
+  { // Erreur 1 pour écriture/accès carte SD
+    code_couleur = erreur;
+  }
+
+  if (erreur == ERR_RTC)
+  { // Erreur 2 pour horloge RTC
+    code_couleur = erreur;
+  }
+
+  if (erreur == ERR_CAPTEUR_ACCES)
+  { // Erreur 3 pour accès capteur
+    code_couleur = erreur;
+  }
+
+  if (erreur == ERR_CAPTEUR_INCOHERENTE)
+  { // Erreur 4 pour incohérence
+    code_couleur = erreur;
+  }
+
+  if (erreur == ERR_GPS)
+  { // Erreur 5 pour GPS
+    code_couleur = erreur;
+  }
+
+  // ISR(TIMER1_COMPA_vect);
 }
