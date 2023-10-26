@@ -129,3 +129,31 @@ ISR(TIMER1_COMPA_vect) {
     Serial.println("Erreur accès/écriture sur carte SD");
   }
 }
+
+void gestionnaire_erreur(int erreur) {
+  if(erreur == ERR_SD_PLEIN) {    // Erreur 0 pour carte SD pleine
+    code_couleur = erreur;
+  }
+
+  if(erreur == ERR_SD_IO) {    // Erreur 1 pour écriture/accès carte SD
+    code_couleur = erreur;
+  }
+
+  if(erreur == ERR_RTC) {    // Erreur 2 pour horloge RTC
+    code_couleur = erreur;
+  }
+
+  if(erreur == ERR_CAPTEUR_ACCES) {    // Erreur 3 pour accès capteur
+    code_couleur = erreur;
+  }
+
+  if(erreur == ERR_CAPTEUR_INCOHERENTE) {    // Erreur 4 pour incohérence
+    code_couleur = erreur;
+  }
+
+  if(erreur == ERR_GPS) {       // Erreur 5 pour GPS
+    code_couleur = erreur;
+  }
+
+  ISR(TIMER1_COMPA_vect);
+}
