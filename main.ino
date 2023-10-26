@@ -32,11 +32,6 @@
 #define CAPTEUR_TYPE_TEMP 0x1
 #define CAPTEUR_TYPE_HYGR 0x2
 #define CAPTEUR_TYPE_PRESSURE 0x3
-
-#define CAPTEUR_TYPE_LUMIN 0x0
-#define CAPTEUR_TYPE_TEMP 0x1
-#define CAPTEUR_TYPE_HYGR 0x2
-#define CAPTEUR_TYPE_PRESSURE 0x3
 #define CAPTEUR_TYPE_GPS 0x4
 #define CAPTEUR_TYPE_PARTICLE 0x5
 #define CAPTEUR_TYPE_TEMP_EAU 0x6
@@ -51,7 +46,7 @@ typedef struct
     int type;
     int min;
     int max;
-    // int timeout; question a poser au prof
+    int timeout; 
     int actif;
     int nombre_erreur;
     // int derniere_valeurs[];
@@ -67,13 +62,11 @@ int version;
 int num_lot;
 int inactivite_config;
 int compteur_revision;
-int mode;
+int mode;                   // le goat
 int compteur_taille_fichier;
 int previous_mode;
 float config_OCR1A;
 int prescaler;
-
-volatile byte *pointeur = &TCCR1B;
 
 int GPS;
 int hygrometrie;
@@ -87,137 +80,106 @@ int courant;
 
 int bouton_test;
 
-//int temps_global = millis();
-
 void setup()
-{
 
-  //mode = MODE_STANDARD;
-  pinMode(button1, INPUT);  // bouton
-  pinMode(button2, INPUT);  // bouton
-  pinMode(9, OUTPUT);
-  pinMode(10, OUTPUT);
-  pinMode(11, OUTPUT); // led
+{
+  cli();
+  pinMode(button1, INPUT);  
+  pinMode(button2, INPUT);  
+  pinMode(9, OUTPUT);       // Vert
+  pinMode(10, OUTPUT);      // Rouge
+  pinMode(11, OUTPUT);      // Bleu
 
   mode = MODE_STANDARD;
   digitalWrite(9, HIGH);
-  cli();
+  
   while (digitalRead(3) == HIGH)
   {
-    //bouton_test == 2;
-    //previous_mode = MODE_STANDARD;
     mode = MODE_CONFIGURATION;
     digitalWrite(11, HIGH);
     digitalWrite(10, HIGH);
-    digitalWrite(9, HIGH);
-    //delay(5000);
+    digitalWrite(9, HIGH);  
   }
   
- 
-  //digitalWrite(9, HIGH);
+  sei();
+
   attachInterrupt(digitalPinToInterrupt(2), timer, CHANGE);
   attachInterrupt(digitalPinToInterrupt(3), timer, CHANGE);
   TCCR1A = 0;
   TCCR1B = 0;
-  //config_OCR1A = (16000000/(prescaler*1000))-1;
+
   Serial.begin(9600);
   Serial.println("Mode de lancement : " + String(mode));
   
-
   for (int i = 0; i < 9; i++)
   {
     capteurs[i] = calloc(1, sizeof(Capteur));
+    capteurs[i]->type = i;
   }
 
-  capteurs[0]->type = 0; //'GPS';
-  capteurs[1]->type = 1; //'hygrometrie';
-  capteurs[2]->type = 2; //'temperature';
-  capteurs[3]->type = 3; //'pression';
-  capteurs[4]->type = 4; //'luminosite';
-  capteurs[5]->type = 5; //'particule';
-  capteurs[6]->type = 6; //'vent';
-  capteurs[7]->type = 7; //'temp_eau';
-  capteurs[8]->type = 8; //'courant';
-  /*
+
+//0; //'luminosite';
+//1; //'temperature';
+//2; //'hygrometrie';
+//3; //'pression';
+//4; //'GPS';
+//5; //'particule';
+//6; //'temp_eau';
+//7; //'vent';
+//8; //'courant';
+ 
   for (int i = 0; i < 9; i++)
   {
-    Serial.println(capteurs[i]->type);
-  }*/
+    Serial.println("Listes des capteurs : " + String(capteurs[i]->type));
+  }
   
-  sei();
 }  // fin setup
 
 
-
-
 void timer() {
-  if (!*pointeur) {
+
     TCNT1 = 0 ;
     TCCR1B |= B00000101;
-    TIMSK1 |= B00000010;        //Set OCIE1A to 1 so we enable compare match B 
-    //4. Set the value of register B to 31250//
+    TIMSK1 |= B00000010;        
     OCR1A = 39063;             //2.5s Finally we set compare register B to this value  
-    
-  } 
-  else {              
-       TCCR1B = 0;
-  }
 }
 
 
 ISR(TIMER1_COMPA_vect)
 {
-/*
-  if (digitalRead(2) == HIGH)
+  switch (mode)                                // 2 rouge // 3 jaune
   {
-    bouton_test = 2;
-    //Serial.println(bouton_test);
+    case MODE_STANDARD:
+      if (digitalRead(2) == HIGH)               
+      {
+        gestionnaire_modes(MODE_MAINTENANCE);         
+        break;
+      }   
+      if (digitalRead(3) == HIGH)
+      {
+        gestionnaire_modes(MODE_ECO);           
+        break;
+      }                 
+    
+    case MODE_ECO:
+      if (digitalRead(3) == HIGH) 
+      {
+        gestionnaire_modes(MODE_STANDARD);        
+        break;
+      }  
+      if (digitalRead(2) == HIGH)               
+      {
+        gestionnaire_modes(MODE_MAINTENANCE);         
+        break;
+      }  
+
+    case MODE_MAINTENANCE:                              
+      if (digitalRead(2) == HIGH) 
+      {
+        gestionnaire_modes(previous_mode);        
+        break;
+      }   
   }
-
-  if (digitalRead(3) == HIGH)
-  {
-    bouton_test = 3;
-    //Serial.println(bouton_test);
-  }
-*/
-
-    switch (mode)  
-    {
-      case MODE_STANDARD:
-        if (digitalRead(2) == HIGH) 
-        {
-          gestionnaire_modes(MODE_MAINTENANCE);         
-          //Serial.println(bouton_test == 2);
-          break;
-        }   
-        if (digitalRead(3) == HIGH)
-        {
-          gestionnaire_modes(MODE_ECO);           
-          break;
-        }     
-
-      case MODE_CONFIGURATION:
-        if (true)
-        {
-                 
-          break;
-        }             
-      
-      case MODE_ECO:
-        if (digitalRead(3) == HIGH) 
-        {
-          gestionnaire_modes(MODE_STANDARD);        
-          break;
-        }  
-
-      case MODE_MAINTENANCE:                              
-        if (digitalRead(2) == HIGH) 
-        {
-          gestionnaire_modes(previous_mode);        
-          break;
-        }  
-        
-    }
 }
 
 
@@ -227,28 +189,25 @@ void loop()
   {
     int temps = millis();
     get_commande();
-    
+    /*
     if (temps > 100) 
     {
-      int p =2;
       gestionnaire_modes(MODE_STANDARD);
-    }
+    }*/
   }
-  Serial.println(mode);
-  Serial.println("previous" + String(previous_mode));
-  delay(1000);
+  //Serial.println(mode);
+  //Serial.println("previous" + String(previous_mode));
+  //delay(1000);
 }
-
 
 
 void gestionnaire_modes(int nvmode)
 {
-
     previous_mode = mode;
 
     switch (nvmode)
     {
-    case 0:             //standard
+    case 0:                //standard
         digitalWrite(9, HIGH);
         digitalWrite(10, LOW);
         digitalWrite(11, LOW); // en vert
@@ -256,31 +215,28 @@ void gestionnaire_modes(int nvmode)
         {
             capteurs[i]->actif = 1;
         }
-        //previous_mode = MODE_STANDARD;
         break;
 
     case 1:             // config
   
-        digitalWrite(9, HIGH);
-        digitalWrite(11, HIGH);
-        digitalWrite(10, LOW); // en jaune
-         // en jaune
+        analogWrite(10, 255);
+        analogWrite(9, 120);
+        digitalWrite(11, LOW); // en jaune
         for (int i = 0; i < sizeof(capteurs) / 2; i++)
         {
             capteurs[i]->actif = 0;
         }
         break;
 
-    case 2:           //maintenance
-        digitalWrite(10, HIGH);
-        digitalWrite(11, HIGH);
-        digitalWrite(9, LOW); // en orange
+    case 2:             //maintenance
+        analogWrite(10, 255);
+        analogWrite(11, 165);
+        digitalWrite(9, LOW); // en violet (au lieu de orange)
         for (int i = 0; i < sizeof(capteurs) / 2; i++)
         {
             capteurs[i]->actif = 1;
             
         }
-        //previous_mode = 3;
         break;
 
     case 3:                   //eco
@@ -297,17 +253,16 @@ void gestionnaire_modes(int nvmode)
             else
                 capteurs[i]->actif = 1;
         }
-        //previous_mode = 3;
         break;
     }
     mode = nvmode;
-    Serial.println("Changement de mode" + String(mode));
+    Serial.println("previous mode : " + String(previous_mode));
+    Serial.println("Changement de mode : " + String(mode));
     for (int i = 0; i < sizeof(capteurs) / 2; i++)
         {
-          Serial.println(capteurs[i]->actif);
+          Serial.println("Liste des etats des capteurs : " + String(capteurs[i]->actif));
         }
 }
-
 
 
 void get_commande()
@@ -320,34 +275,48 @@ void get_commande()
   {
     String command = Serial.readStringUntil('=');
     int value = Serial.readStringUntil('\n').toInt();
+    Serial.flush();
 
-    if(command.indexOf("LUMIN") > 0)
+    if(command.startsWith("LUMIN"))
     {
-      i = 4;
+      i = 0;
       MIN = 0;
       MAX = 1023;
     }
 
-    if(command.indexOf("TEMP") > 0)
+    else if(command.startsWith("TEMP_AIR"))
     {
       i = 1;
       MIN = -40;
       MAX = 85;
     }
 
-    if(command.indexOf("HYGR") > 0)
+    else if(command.startsWith("HYGR"))
     {
       i = 2;
       MIN = -40;
       MAX = 85;
     }
 
-    if(command.indexOf("PRESSURE") > 0)
+    else if(command.startsWith("PRESSURE"))
     {
       i = 3;
       MIN = 300;
       MAX = 1100;
     }
+    Serial.println(String(command));
+    Serial.println(String(MIN)+" "+String(MAX));
+    Serial.println(String(i));
+
+//0; //'luminosite';
+//1; //'temperature';
+//2; //'hygrometrie';
+//3; //'pression';
+//4; //'GPS';
+//5; //'particule';
+//6; //'temp_eau';
+//7; //'vent';
+//8; //'courant';
 
     if(command == "LUMIN" || command == "TEMP_AIR" || command == "HYGR" || command == "PRESSURE")
     {
@@ -355,6 +324,11 @@ void get_commande()
       {
         capteurs[i]->actif = value;
         Serial.println("succès de l'operation !!");
+/*
+        for (int i; i < 9; i++)
+        {
+          Serial.println("Etat des capteurs apres config : " + String(capteurs[i]->actif));
+        }*/
       }
       else
       {
@@ -370,6 +344,11 @@ void get_commande()
       {
         capteurs[i]->min = value;
         Serial.println("succès de l'operation !!");
+/*
+        for (int i; i < 9; i++)
+        {
+          Serial.println("Etat des minimum apres config : " + String(capteurs[i]->min));
+        }*/
       }
       else
       {
@@ -385,6 +364,11 @@ void get_commande()
       {
         capteurs[i]->max = value;
         Serial.println("succès de l'operation !!");
+/*
+        for (int i; i < 9; i++)
+        {
+          Serial.println("Etat des maximum apres config : " + String(capteurs[i]->max));
+        }*/
       }
       else
       {
@@ -393,14 +377,85 @@ void get_commande()
       command = "None";
     }
 
+    if(command == "LOG_INTERVALL")
+    {
+      if(value > 0)
+      {
+        log_interval = value;
 
-    /*
+        //Serial.println("Nouvelle valeur de log_interval" + String(log_interval));
+      }
+      else
+      {
+        Serial.println("Valeur trop basse !\n");
+      }
+    }
+
+    if(command == "FILE_MAX_SIZE")
+    {
+      if(value < 16384 && value > 512)
+      {
+        file_max_size = value;
+
+        //Serial.println("Nouvelle valeur de file_max_size" + String(file_max_size));
+      }
+      else
+      {
+        Serial.println("Valeur incohérente !\n");
+      }
+    }
+
+  if(command == "RESET=0")
+    {
+      file_max_size = DEFAULT_FILE_MAX_SIZE;
+      log_interval = DEFAULT_LOG_INTERVAL;
+      for (int i = 0; i < 3; i++)
+      {
+        capteurs[i]->timeout = DEFAULT_TIMEOUT_CAPTEUR;     // reset du timeout des capteurs
+        capteurs[i]->actif = DEFAULT_ACTIVATION;            // reset de l'etat des capteurs
+      }
+      capteurs[0]->min = DEFAULT_LUMIN_LOW;    // reset des valeurs de la luminosite
+      capteurs[0]->max = DEFAULT_LUMIN_HIGH;
+
+      capteurs[1]->min = DEFAULT_MIN_TEMP;      // reset des valeurs de la temperature
+      capteurs[1]->max = DEFAULT_MAX_TEMP;
+
+      capteurs[2]->min = DEFAULT_HYGR_MINT;      // reset des valeurs de l'hygrometrie
+      capteurs[2]->max = DEFAULT_HYGR_MAXT;
+
+      capteurs[3]->min = DEFAULT_PRESSURE_MIN;        // reset des valeurs de la pression
+      capteurs[3]->max = DEFAULT_PRESSURE_MAX;
+      //Serial.println("OKKKKKKKKKK");
+    }
+
+    if(command == "VERSION")
+    {
+      Serial.println(version);
+    }
+
+    if(command == "TIMEOUT")
+    {
+      if(value < 0)
+      {
+        for (int i = 0; i < 9; i++)
+        {
+          capteurs[i]->timeout = value;
+        }
+      }
+      else
+      {
+        Serial.println("NTM CA MARCHE PAS TA VALEUR !!!");
+      }
+    }
+
+
+    
     for (int i = 0; i < 9; i++)
     {
       Serial.println("Nouvelles valeurs actives des capteurs : " + String(capteurs[i]->actif));
       Serial.println("Nouvelles valeurs des seuil MIN : " + String(capteurs[i]->min));
       Serial.println("Nouvelles valeurs des seuil MAX : " + String(capteurs[i]->max));
-    }*/
+    }
 
   }
 }
