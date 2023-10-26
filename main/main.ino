@@ -41,30 +41,39 @@
 #define button1 2
 #define button2 3
 
+#define V 9
+#define R 10
+#define B 11
+
+#include <RTClib.h>
+#include <SdFat.h>
+
+// to works with VSCode
+#ifndef TCCR1B
+extern int TCCR1A;
+extern int TCCR1B;
+extern int TIMSK1;
+extern int OCR1A;
+extern int TCNT1;
+#endif
+
 typedef struct // Structure de nos capteurs.
 {
   int type;
   int min;
   int max;
   int timeout;
-  int actif;
+  bool actif;
   int nombre_erreur;
-  // int derniere_valeurs[];
-  int tab_moy_index;
+  int dernieres_valeurs[10];
+  int tableau_valeurs_index;
   int moyenne;
 } Capteur;
 
-Capteur *capteurs[9]; // tableau contenant nos 9 capteurs
-
 int log_interval;
-int file_max_size;
 float version = 1.0;
 int num_lot;
 int inactivite_config;
-int compteur_revision;
-int mode; // le goat
-int compteur_taille_fichier;
-int previous_mode;
 float config_OCR1A;
 int prescaler;
 
@@ -80,10 +89,126 @@ int courant;
 
 int bouton_test;
 
-void setup()
+int file_max_size = 2048;
+int compteur_taille_fichier = 0;
+int compteur_revision = 0;
+int mode = 0;
+Capteur *capteurs[9];
+int year;
+int month;
+int day;
+int previous_mode = -1;
+int inactivite = 0;
 
+int etatled = 0;
+int code_couleur = 2;
+int compteur_sec = 0;
+
+SdFat32 *SD;
+RTC_DS1307 *rtc;
+
+void erreur(int erreur)
 {
-  Serial.begin(9600); // lancement du port serie.
+  Serial.println("Error " + String(erreur));
+}
+
+File *changement_fichier(int mess_size)
+{
+  DateTime *now = &rtc->now();
+  static File actualFile;
+  static bool firstcall = true;
+  if (firstcall)
+  {
+    String aa = String(now->year());
+    aa = String(aa[2]) + String(aa[3]);
+    String mm = String(now->month());
+    if (now->month() < 10)
+      mm = "0" + mm;
+    String jj = String(now->day());
+    if (now->day() < 10)
+      jj = "0" + jj;
+    actualFile = SD->open(aa + mm + jj + "_" + String(compteur_revision) + ".LOG", O_RDWR | O_CREAT | O_TRUNC);
+  }
+  firstcall = false;
+  if (!actualFile)
+    erreur(1);
+  bool changeFile = false;
+  if (actualFile.position() + mess_size > file_max_size)
+  {
+    compteur_revision++;
+    changeFile = true;
+    compteur_taille_fichier = 0;
+  }
+  if (year != now->year() && month != now->month() && day != now->day())
+  {
+    compteur_revision = 0;
+    year = now->year();
+    month = now->month();
+    day = now->day();
+    changeFile = true;
+  }
+  if (changeFile)
+  {
+    String aa = String(now->year());
+    aa = String(aa[2]) + String(aa[3]);
+    String mm = String(now->month());
+    if (now->month() < 10)
+      mm = "0" + mm;
+    String jj = String(now->day());
+    if (now->day() < 10)
+      jj = "0" + jj;
+    Serial.println("Copy to " + aa + mm + jj + "_" + String(compteur_revision) + ".LOG");
+    File newFile = SD->open(aa + mm + jj + "_" + String(compteur_revision) + ".LOG", O_RDWR | O_CREAT | O_TRUNC);
+    if (!newFile)
+    {
+      compteur_revision--;
+      erreur(5);
+    }
+    else
+    {
+      actualFile.seek(0);
+      while (actualFile.available())
+      {
+        int lastPos = actualFile.position();
+        newFile.write(actualFile.read());
+        if (lastPos == actualFile.position())
+        {
+          erreur(2);
+          break;
+        }
+      }
+      newFile.flush();
+      newFile.close();
+      actualFile.seek(0);
+      Serial.println(F("Changed file"));
+    }
+  }
+  return &actualFile;
+}
+
+void enregistrement()
+{
+  char mess[] = "Capteur 1 = 25, Capteur 2 = 25, Capteur 3 = 25, Capteur 4 = 25, Capteur 5 = 25, Capteur 6 = 25, Capteur 7 = 25, Capteur 8 = 25, Capteur 9 = 25 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  File *actualFile = changement_fichier(sizeof(mess) / sizeof(mess[0]));
+  /*for (int i = 0; i < sizeof(capteurs) / sizeof(capteurs[0]); i++)
+  {
+      if (actualFile->availableForWrite())
+          actualFile->print("25 ");
+      else
+          erreur(20);
+      actualFile->flush();
+  }*/
+  int pos = actualFile->position();
+  actualFile->println(mess);
+  if (pos == actualFile->position())
+    erreur(21);
+  else
+    actualFile->flush();
+}
+
+void setup()
+{
+  Serial.begin(115200);
 
   cli();                   // désactive les interruptions.
   pinMode(button1, INPUT); // Etablissement des pins
@@ -114,7 +239,7 @@ void setup()
 
   for (int i = 0; i < 9; i++) // allocation mémoire des capteurs de la structure.
   {
-    capteurs[i] = calloc(1, sizeof(Capteur));
+    capteurs[i] = (Capteur *)calloc(1, sizeof(Capteur));
     capteurs[i]->type = i;
   }
 
@@ -190,10 +315,15 @@ ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
 
 void loop() // test de loop rapide (a ne pas prendre en compte)
 {
-  if (mode == MODE_CONFIGURATION)
+  if (mode == MODE_STANDARD)
+    enregistrement();
+  if (mode == MODE_CONFIGURATION && millis() - inactivite >= 30000)
+    gestionnaire_modes(0);
+  else
   {
-    get_commande(); // appel de get commande en monde configuration.
+    get_commande();
   }
+  delay(1e3);
 }
 
 void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode comme parametre.
@@ -211,10 +341,33 @@ void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode
     {
       capteurs[i]->actif = 1; // active tout les capteurs en standard.
     }
+    Serial.print(F("Initializing SD card..."));
+    SD = new SdFat32();
+    rtc = new RTC_DS1307();
+    if (!SD->begin(4))
+    {
+      Serial.println(F("initialization failed!"));
+      erreur(13);
+    }
+    else
+    {
+      Serial.println(F("initialization done."));
+    }
+    if (!rtc->begin())
+    {
+      Serial.println(F("Horloge introuvable"));
+    }
+    else
+    {
+      DateTime *now = &rtc->now();
+      year = now->year();
+      month = now->month();
+      day = now->day();
+    }
     break;
 
   case 1: // config
-
+    inactivite = millis();
     analogWrite(10, 255);
     analogWrite(9, 120);
     digitalWrite(11, LOW); // en jaune
@@ -225,6 +378,7 @@ void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode
     break;
 
   case 2: // maintenance
+    inactivite = millis();
     analogWrite(10, 255);
     analogWrite(11, 165);
     digitalWrite(9, LOW); // en violet (au lieu de orange)
@@ -267,6 +421,7 @@ void get_commande() // fonction pour les commandes en mode config.
 
   if (Serial.available() != 0) // si on ecrit dans le port serie.
   {
+    inactivite = millis();
     String command = Serial.readStringUntil('=');     // command = la commande ecrite avant le "=".
     int value = Serial.readStringUntil('\n').toInt(); // value = la valeur ecrite apres le "=".
 
