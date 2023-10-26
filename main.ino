@@ -109,17 +109,7 @@ void setup() {
   // RTC
   Wire.begin();
   RTC.begin(); 
-  /*Initialise la date et le jour au moment de la compilation 
-  // /!\ /!\ Les lignes qui suivent servent à définir la date et l'heure afin de régler le module, 
-  // pour les montages suivant il ne faut surtout PAS la mettre, sans à chaque démarrage 
-  // le module se réinitialisera à la date et heure de compilation
-  
-  DateTime dt = DateTime(__DATE__, __TIME__);
-  RTC.adjust(dt);
-  
-  // /!\
 
-*/
 Serial.print("\n");
   DateTime now=RTC.now();
 
