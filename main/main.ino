@@ -48,18 +48,14 @@
 #include <RTClib.h>
 #include <SdFat.h>
 #include <Arduino.h>
-
 #include <SPI.h>
 #include <SoftwareSerial.h>
-
+#include <Adafruit_BMP280.h>
 #include <Wire.h>
-#include <RTClib.h>
-
 #include <DHT.h>
+
 #define DHT_PIN 5
 #define DHTTYPE DHT11
-
-#include <Adafruit_BMP280.h>
 
 // to works with VSCode
 #ifndef TCCR1B
@@ -168,26 +164,6 @@ String Vers2Chiffres(byte nombre)
   return resultat += String(nombre, DEC);
 }
 
-// affiche la date et l'heure sur l'écran
-void affiche_date_heure(DateTime *datetime)
-{
-
-  // Date
-  String jour = donne_jour_semaine(datetime->dayOfTheWeek()) + " " +
-                Vers2Chiffres(datetime->day()) + "/" +
-                Vers2Chiffres(datetime->month()) + "/" +
-                String(datetime->year(), DEC);
-
-  // heure
-  String heure = "";
-  heure = Vers2Chiffres(datetime->hour()) + ":" +
-          Vers2Chiffres(datetime->minute()) + ":" +
-          Vers2Chiffres(datetime->second());
-
-  // affichage sur l'écran
-  Serial.println(jour + " | " + heure);
-}
-
 // Instance DHT(Température et humidité)
 DHT dht(DHT_PIN, DHTTYPE);
 
@@ -214,15 +190,16 @@ void setup()
 
   while (digitalRead(3) == HIGH) // Si on appuie sur le bouton 2, le mode configuration se lance.
   {
+    Serial.println("FILS DE PUTE");
     mode = MODE_CONFIGURATION;
     digitalWrite(11, HIGH);
     digitalWrite(10, HIGH);
     digitalWrite(9, HIGH);
   }
 
-  /*TCCR1A = 0;          // Reset TCCR1A à 0 (timer + comparateur)
-  TCCR1B = 0;          // Reset TCCR1A à 0 (timer + comparateur)
-  TCCR1B |= B00000100; // Met CS12 à 1 pour un prescaler à 256 (limite)
+  TCCR1A = 0; // Reset TCCR1A à 0 (timer + comparateur)
+  TCCR1B = 0; // Reset TCCR1A à 0 (timer + comparateur)
+  /*TCCR1B |= B00000100; // Met CS12 à 1 pour un prescaler à 256 (limite)
   TIMSK1 |= B00000010; // Met OCIE1A à 1 pour comparer le comparer au match A
 
   OCR1A = 31250;*/
@@ -260,6 +237,8 @@ void setup()
   // GPS
   GPS.begin(9600);
 
+  // Wire.begin();
+
   // DHT
   dht.begin();
 
@@ -268,26 +247,25 @@ void setup()
   if (!bmp->begin(0x76))
     gestionnaire_erreur(ERR_CAPTEUR_ACCES);
   //---
+  rtc = new RTC_DS1307();
   rtc->begin();
 
-  Serial.print("\n");
   DateTime *now = &rtc->now();
   year = now->year();
   month = now->month();
   day = now->day();
 
-  affiche_date_heure(now);
-
 } // fin setup
 
 void timer()
-{                          // fonction d'interruption logiciel appelé par l'attachInterrupt.
-  cli();                   // Stop interrupts
-  TCNT1 = 0;               // compteur du timer a 0.
-  TCCR1B |= B00000101;     // configure le registre TCCR1B pour activer le Timer 1 en mode CTC avec un préscaleur de 1024.
-  TIMSK1 |= B00000010;     // Cela active l'interruption de correspondance avec le registre OCR1A pour le Timer 1.
-  OCR1A = /*31250*/ 39063; // configure la valeur de comparaison du Timer 1 à 39063. (2.5 secondes.)
-  sei();                   // Reactivation des interruptions.
+{                      // fonction d'interruption logiciel appelé par l'attachInterrupt.
+  cli();               // Stop interrupts
+  TCNT1 = 0;           // compteur du timer a 0.
+  TCCR1B |= B00000101; // configure le registre TCCR1B pour activer le Timer 1 en mode CTC avec un préscaleur de 1024.
+  TIMSK1 |= B00000010; // Cela active l'interruption de correspondance avec le registre OCR1A pour le Timer 1.
+  OCR1A =              /*31250*/
+      39063;           // configure la valeur de comparaison du Timer 1 à 39063. (2.5 secondes.)
+  sei();               // Reactivation des interruptions.
 }
 
 ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
@@ -327,208 +305,6 @@ ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
         break;
       }
     }
-  }
-  // gestionnaire erreur
-  if (code_couleur == 2)
-  { // Erreur Horloge RTC
-    if (etatled == 0)
-    {
-      if (compteur_sec == 1)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 255);
-        analogWrite(B, 0);
-        etatled = 1;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    else
-    {
-      if (compteur_sec == 1)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 0);
-        analogWrite(B, 255);
-        etatled = 0;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    Serial.println(F("Erreur accès horloge RTC"));
-  }
-
-  if (code_couleur == 5)
-  { // Erreur GPS
-    if (etatled == 0)
-    {
-      if (compteur_sec == 1)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 255);
-        analogWrite(V, 0);
-        etatled = 1;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    else
-    {
-      if (compteur_sec == 1)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 255);
-        analogWrite(V, 255);
-        etatled = 0;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    Serial.println(F("Erreur accès GPS"));
-  }
-
-  if (code_couleur == 3)
-  { // Erreur accès capteurs
-    if (etatled == 0)
-    {
-      if (compteur_sec == 1)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 255);
-        analogWrite(V, 0);
-        etatled = 1;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    else
-    {
-      if (compteur_sec == 1)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 0);
-        analogWrite(V, 255);
-        etatled = 0;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    Serial.println(F("Erreur accès capteur"));
-  }
-
-  if (code_couleur == 4)
-  { // Erreur incohérence
-    if (etatled == 0)
-    {
-      if (compteur_sec == 1)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 0);
-        analogWrite(V, 255);
-        etatled = 1;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    else
-    {
-      if (compteur_sec == 3)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 255);
-        analogWrite(V, 0);
-        etatled = 0;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    Serial.println(F("Erreur données incohérentes // Vérification matérielle requise"));
-  }
-
-  if (code_couleur == 0)
-  { // Erreur carte SD pleine
-    if (etatled == 0)
-    {
-      if (compteur_sec == 1)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 255);
-        analogWrite(V, 0);
-        analogWrite(B, 0);
-        etatled = 1;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    else
-    {
-      if (compteur_sec == 1)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 255);
-        analogWrite(V, 255);
-        analogWrite(B, 255);
-        etatled = 0;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    Serial.println(F("Erreur : Carte SD pleine"));
-  }
-
-  if (code_couleur == 1)
-  { // Erreur accès/écriture carte SD
-    if (etatled == 0)
-    {
-      if (compteur_sec == 1)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 255);
-        analogWrite(V, 255);
-        analogWrite(V, 255);
-        etatled = 1;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    else
-    {
-      if (compteur_sec == 3)
-      {
-        compteur_sec = 0;
-        analogWrite(R, 255);
-        analogWrite(V, 0);
-        analogWrite(V, 0);
-        etatled = 0;
-      }
-      else
-      {
-        compteur_sec++;
-      }
-    }
-    Serial.println(F("Erreur accès/écriture sur carte SD"));
   }
 }
 
@@ -679,7 +455,6 @@ void loop() // test de loop rapide (a ne pas prendre en compte)
         bmp->readPressure() / 100 > 1050 || t_eau > 29 || c_marin > 4 || f_vent > 28 || partic > 170)
       gestionnaire_erreur(ERR_CAPTEUR_INCOHERENTE);
     // enregistrement();
-    delay(2000);
   }
 
   if (mode == MODE_CONFIGURATION && millis() - inactivite >= 30000)
@@ -688,7 +463,7 @@ void loop() // test de loop rapide (a ne pas prendre en compte)
   {
     // get_commande();
   }
-  delay(1e3);
+  // delay(2e3);
 }
 
 void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode comme parametre.
