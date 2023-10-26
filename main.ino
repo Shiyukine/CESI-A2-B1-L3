@@ -58,7 +58,7 @@ Capteur *capteurs[9];
 
 int log_interval;
 int file_max_size;
-int version;
+float version = 1.0;
 int num_lot;
 int inactivite_config;
 int compteur_revision;
@@ -83,6 +83,9 @@ int bouton_test;
 void setup()
 
 {
+  Serial.begin(9600);
+  
+    
   cli();
   pinMode(button1, INPUT);  
   pinMode(button2, INPUT);  
@@ -108,7 +111,7 @@ void setup()
   TCCR1A = 0;
   TCCR1B = 0;
 
-  Serial.begin(9600);
+
   Serial.println("Mode de lancement : " + String(mode));
   
   for (int i = 0; i < 9; i++)
@@ -118,20 +121,29 @@ void setup()
   }
 
 
-//0; //'luminosite';
-//1; //'temperature';
-//2; //'hygrometrie';
-//3; //'pression';
-//4; //'GPS';
-//5; //'particule';
-//6; //'temp_eau';
-//7; //'vent';
-//8; //'courant';
  
   for (int i = 0; i < 9; i++)
   {
     Serial.println("Listes des capteurs : " + String(capteurs[i]->type));
   }
+
+
+  for (int i = 0; i < 3; i++)
+        {
+          capteurs[i]->timeout = DEFAULT_TIMEOUT_CAPTEUR;     // reset du timeout des capteurs
+          capteurs[i]->actif = DEFAULT_ACTIVATION;            // reset de l'etat des capteurs
+        }
+        capteurs[0]->min = DEFAULT_LUMIN_LOW;    // reset des valeurs de la luminosite
+        capteurs[0]->max = DEFAULT_LUMIN_HIGH;
+
+        capteurs[1]->min = DEFAULT_MIN_TEMP;      // reset des valeurs de la temperature
+        capteurs[1]->max = DEFAULT_MAX_TEMP;
+
+        capteurs[2]->min = DEFAULT_HYGR_MINT;      // reset des valeurs de l'hygrometrie
+        capteurs[2]->max = DEFAULT_HYGR_MAXT;
+
+        capteurs[3]->min = DEFAULT_PRESSURE_MIN;        // reset des valeurs de la pression
+        capteurs[3]->max = DEFAULT_PRESSURE_MAX;
   
 }  // fin setup
 
@@ -142,6 +154,24 @@ void timer() {
     TCCR1B |= B00000101;
     TIMSK1 |= B00000010;        
     OCR1A = 39063;             //2.5s Finally we set compare register B to this value  
+
+
+    for (int i = 0; i < 3; i++)
+        {
+          capteurs[i]->timeout = DEFAULT_TIMEOUT_CAPTEUR;     // reset du timeout des capteurs
+          capteurs[i]->actif = DEFAULT_ACTIVATION;            // reset de l'etat des capteurs
+        }
+        capteurs[0]->min = DEFAULT_LUMIN_LOW;    // reset des valeurs de la luminosite
+        capteurs[0]->max = DEFAULT_LUMIN_HIGH;
+
+        capteurs[1]->min = DEFAULT_MIN_TEMP;      // reset des valeurs de la temperature
+        capteurs[1]->max = DEFAULT_MAX_TEMP;
+
+        capteurs[2]->min = DEFAULT_HYGR_MINT;      // reset des valeurs de l'hygrometrie
+        capteurs[2]->max = DEFAULT_HYGR_MAXT;
+
+        capteurs[3]->min = DEFAULT_PRESSURE_MIN;        // reset des valeurs de la pression
+        capteurs[3]->max = DEFAULT_PRESSURE_MAX;
 }
 
 
@@ -265,8 +295,10 @@ void get_commande()
 
   if (Serial.available() != 0)
   {
-    String command = Serial.readStringUntil('=').trim();
+    String command = Serial.readStringUntil('=');
     int value = Serial.readStringUntil('\n').toInt();
+
+    Serial.println(command);
 
     if(command.startsWith("LUMIN"))
     {
@@ -296,15 +328,6 @@ void get_commande()
       MAX = 1100;
     }
 
-//0; //'luminosite';
-//1; //'temperature';
-//2; //'hygrometrie';
-//3; //'pression';
-//4; //'GPS';
-//5; //'particule';
-//6; //'temp_eau';
-//7; //'vent';
-//8; //'courant';
 
     if(command == "LUMIN" || command == "TEMP_AIR" || command == "HYGR" || command == "PRESSURE")
     {
@@ -352,12 +375,15 @@ void get_commande()
       {
         capteurs[i]->max = value;
         Serial.println("succès de l'operation !!");
-/*
+
+
+
         for (int i; i < 9; i++)
         {
           Serial.println("Etat des maximum apres config : " + String(capteurs[i]->max));
-        }*/
+        }
       }
+
       else
       {
         Serial.println("veuillez entrer une valeur entre "+ String(MIN) + " et " + String(MAX) + ".\n");
@@ -371,64 +397,65 @@ void get_commande()
       {
         log_interval = value;
 
-        //Serial.println("Nouvelle valeur de log_interval" + String(log_interval));
+        Serial.println("Nouvelle valeur de log_interval : " + String(log_interval));
       }
       else
       {
-        Serial.println("Valeur trop basse !\n");
+        Serial.println("Valeur trop basse pour LOG_INTERVAL !\n");
       }
     }
 
-    if(command == "FILE_MAX_SIZE")
+    if(command == "FILE_SIZE")
     {
       if(value < 16384 && value > 512)
       {
         file_max_size = value;
 
-        //Serial.println("Nouvelle valeur de file_max_size" + String(file_max_size));
+        Serial.println("Nouvelle valeur de file_max_size : " + String(file_max_size));
       }
       else
       {
-        Serial.println("Valeur incohérente !\n");
+        Serial.println("Valeur incohérente pour FILE_MAX_SIZE !\n");
       }
     }
 
-  if(command == "RESET=0")
-    {
-      file_max_size = DEFAULT_FILE_MAX_SIZE;
-      log_interval = DEFAULT_LOG_INTERVAL;
-      for (int i = 0; i < 3; i++)
+    if(command == "RESET")
       {
-        capteurs[i]->timeout = DEFAULT_TIMEOUT_CAPTEUR;     // reset du timeout des capteurs
-        capteurs[i]->actif = DEFAULT_ACTIVATION;            // reset de l'etat des capteurs
+        file_max_size = DEFAULT_FILE_MAX_SIZE;
+        log_interval = DEFAULT_LOG_INTERVAL;
+        for (int i = 0; i < 3; i++)
+        {
+          capteurs[i]->timeout = DEFAULT_TIMEOUT_CAPTEUR;     // reset du timeout des capteurs
+          capteurs[i]->actif = DEFAULT_ACTIVATION;            // reset de l'etat des capteurs
+        }
+        capteurs[0]->min = DEFAULT_LUMIN_LOW;    // reset des valeurs de la luminosite
+        capteurs[0]->max = DEFAULT_LUMIN_HIGH;
+
+        capteurs[1]->min = DEFAULT_MIN_TEMP;      // reset des valeurs de la temperature
+        capteurs[1]->max = DEFAULT_MAX_TEMP;
+
+        capteurs[2]->min = DEFAULT_HYGR_MINT;      // reset des valeurs de l'hygrometrie
+        capteurs[2]->max = DEFAULT_HYGR_MAXT;
+
+        capteurs[3]->min = DEFAULT_PRESSURE_MIN;        // reset des valeurs de la pression
+        capteurs[3]->max = DEFAULT_PRESSURE_MAX;
       }
-      capteurs[0]->min = DEFAULT_LUMIN_LOW;    // reset des valeurs de la luminosite
-      capteurs[0]->max = DEFAULT_LUMIN_HIGH;
-
-      capteurs[1]->min = DEFAULT_MIN_TEMP;      // reset des valeurs de la temperature
-      capteurs[1]->max = DEFAULT_MAX_TEMP;
-
-      capteurs[2]->min = DEFAULT_HYGR_MINT;      // reset des valeurs de l'hygrometrie
-      capteurs[2]->max = DEFAULT_HYGR_MAXT;
-
-      capteurs[3]->min = DEFAULT_PRESSURE_MIN;        // reset des valeurs de la pression
-      capteurs[3]->max = DEFAULT_PRESSURE_MAX;
-      //Serial.println("OKKKKKKKKKK");
-    }
 
     if(command == "VERSION")
     {
-      Serial.println(version);
+      Serial.println("Version : " + String(version));
     }
+
 
     if(command == "TIMEOUT")
     {
-      if(value < 0)
+      if(value > 0)
       {
         for (int i = 0; i < 9; i++)
         {
           capteurs[i]->timeout = value;
         }
+        Serial.println("timeout : "+ String(value));
       }
       else
       {
