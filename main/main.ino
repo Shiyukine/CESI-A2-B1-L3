@@ -44,7 +44,7 @@
 
 #define V 9
 #define R 10
-#define B 11
+#define B 6
 
 #define lum_PIN A1
 
@@ -56,7 +56,7 @@
 #include <Adafruit_BMP280.h>
 #include <DHT.h>
 
-#define DHT_PIN 5
+#define DHT_PIN 4
 #define DHTTYPE DHT11
 
 // to works with VSCode
@@ -105,11 +105,11 @@ int compteur_sec = 0;
 
 bool sdmounted = false;
 
-SdFat32 *SD;
-RTC_DS1307 *rtc;
+SdFat32 SD;
+RTC_DS1307 rtc;
 
 // initialisation du périph, pin 7 réception, pin 8 envoie
-SoftwareSerial *GPS;
+SoftwareSerial GPS(7, 8);
 
 // Instance DHT(Température et humidité)
 DHT *dht;
@@ -119,7 +119,7 @@ Adafruit_BMP280 *bmp;
 
 File *changement_fichier(int mess_size)
 {
-  DateTime *now = &rtc->now();
+  DateTime *now = &rtc.now();
   String aa = String(now->year()).substring(1, 3);
   String mm = String(now->month());
   if (now->month() < 10)
@@ -128,7 +128,8 @@ File *changement_fichier(int mess_size)
   if (now->day() < 10)
     jj = "0" + jj;
   String file_name = aa + mm + jj + "_" + (String)compteur_revision + ".LOG";
-  static File actualFile = SD->open(file_name, O_RDWR | O_CREAT | O_TRUNC);
+  Serial.println(file_name);
+  static File actualFile = SD.open(file_name, O_RDWR | O_CREAT | O_TRUNC);
   if (!actualFile)
     gestionnaire_erreur(ERR_SD_IO);
   bool changeFile = false;
@@ -149,7 +150,7 @@ File *changement_fichier(int mess_size)
   if (changeFile)
   {
     Serial.println("Copy to " + file_name);
-    File newFile = SD->open(file_name, O_RDWR | O_CREAT | O_TRUNC);
+    File newFile = SD.open(file_name, O_RDWR | O_CREAT | O_TRUNC);
     if (!newFile)
     {
       compteur_revision--;
@@ -179,18 +180,21 @@ File *changement_fichier(int mess_size)
 
 void enregistrement()
 {
-  String mess = "";
-  File *actualFile = changement_fichier(mess.length());
+  File *actualFile = changement_fichier(256);
+  int pos = actualFile->position();
   for (int i = 0; i < sizeof(capteurs) / sizeof(capteurs[0]); i++)
   {
-    mess += "Capteur " + (String)i + " : " + (String)capteurs[i]->dernieres_valeurs[capteurs[i]->tableau_valeurs_index - 1];
+    int index = capteurs[i]->tableau_valeurs_index - 1;
+    if (index < 0 && index > 10)
+      index = 0;
+    actualFile->print("Capteur ");
+    actualFile->print(i);
+    actualFile->print(" : ");
+    actualFile->println(capteurs[i]->dernieres_valeurs[index]);
   }
-  int pos = actualFile->position();
-  actualFile->println(mess);
-  if (pos == actualFile->position())
-    gestionnaire_erreur(ERR_SD_PLEIN);
-  else
-    actualFile->flush();
+  // if (pos == actualFile->position())
+  //   gestionnaire_erreur(ERR_SD_PLEIN);
+  // else actualFile->flush();
 }
 
 void setup()
@@ -253,8 +257,7 @@ void setup()
   capteurs[3]->max = DEFAULT_PRESSURE_MAX;
 
   // GPS
-  GPS = new SoftwareSerial(7, 8);
-  GPS->begin(9600);
+  GPS.begin(9600);
 
   // DHT
   dht = new DHT(DHT_PIN, DHTTYPE);
@@ -265,10 +268,10 @@ void setup()
   if (!bmp->begin(0x76))
     gestionnaire_erreur(ERR_CAPTEUR_ACCES);
   //---
-  rtc = new RTC_DS1307();
-  rtc->begin();
+  if (!rtc.begin())
+    gestionnaire_erreur(ERR_CAPTEUR_ACCES);
 
-  DateTime *now = &rtc->now();
+  DateTime *now = &rtc.now();
   year = now->year();
   month = now->month();
   day = now->day();
@@ -534,10 +537,9 @@ void loop() // test de loop rapide (a ne pas prendre en compte)
 {
   if (mode == MODE_STANDARD)
   {
-    /*while (GPS->available())
+    while (GPS.available())
     {
-      GPS->read();
-      String str = GPS->readStringUntil('\n');
+      String str = GPS.readStringUntil('\n');
       if (str.startsWith("$GPGGA"))
       {
         char lati[] = "";
@@ -557,8 +559,12 @@ void loop() // test de loop rapide (a ne pas prendre en compte)
         }
         capteurs[CAPTEUR_TYPE_GPS_LAT]->dernieres_valeurs[capteurs[CAPTEUR_TYPE_GPS_LAT]->tableau_valeurs_index] = String(lati).toInt();
         capteurs[CAPTEUR_TYPE_GPS_LAT]->tableau_valeurs_index++;
+        if (capteurs[CAPTEUR_TYPE_GPS_LAT]->tableau_valeurs_index >= 10)
+          capteurs[CAPTEUR_TYPE_GPS_LAT]->tableau_valeurs_index = 0;
         capteurs[CAPTEUR_TYPE_GPS_LON]->dernieres_valeurs[capteurs[CAPTEUR_TYPE_GPS_LON]->tableau_valeurs_index] = String(longi).toInt();
         capteurs[CAPTEUR_TYPE_GPS_LON]->tableau_valeurs_index++;
+        if (capteurs[CAPTEUR_TYPE_GPS_LON]->tableau_valeurs_index >= 10)
+          capteurs[CAPTEUR_TYPE_GPS_LON]->tableau_valeurs_index = 0;
       }
     }
     for (int i = 0; i < 10; i++)
@@ -571,15 +577,15 @@ void loop() // test de loop rapide (a ne pas prendre en compte)
         break;
 
       case CAPTEUR_TYPE_TEMP:
-        // val = dht->readTemperature();
+        val = dht->readTemperature();
         break;
 
       case CAPTEUR_TYPE_HYGR:
-        // val = dht->readHumidity();
+        val = dht->readHumidity();
         break;
 
       case CAPTEUR_TYPE_PRESSURE:
-        // val = bmp->readPressure() / 100;
+        val = bmp->readPressure() / 100;
         break;
 
       case CAPTEUR_TYPE_PARTICLE:
@@ -605,13 +611,13 @@ void loop() // test de loop rapide (a ne pas prendre en compte)
       {
         capteurs[i]->dernieres_valeurs[capteurs[i]->tableau_valeurs_index] = val;
         capteurs[i]->tableau_valeurs_index++;
+        if (capteurs[i]->tableau_valeurs_index >= 10)
+          capteurs[i]->tableau_valeurs_index = 0;
+        if (val > capteurs[i]->max || val < capteurs[i]->min)
+          gestionnaire_erreur(ERR_CAPTEUR_INCOHERENTE);
       }
-    }*/
-
-    /*if (dht->readTemperature() > 40 || dht->readTemperature() < -10 || lum_val > 25000 || lum_val < 0 || bmp->readPressure() / 100 < 900 ||
-        bmp->readPressure() / 100 > 1050 || t_eau > 29 || c_marin > 4 || f_vent > 28 || partic > 170)
-      gestionnaire_erreur(ERR_CAPTEUR_INCOHERENTE);*/
-    // enregistrement();
+    }
+    enregistrement();
     //   delay(2000);
   }
   else if (mode == MODE_CONFIGURATION)
@@ -623,7 +629,7 @@ void loop() // test de loop rapide (a ne pas prendre en compte)
       get_commande();
     }
   }
-  // delay(1e3);
+  delay(1e3);
 }
 
 void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode comme parametre.
@@ -642,10 +648,9 @@ void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode
     {
       capteurs[i]->actif = 1; // active tout les capteurs en standard.
     }
-    /*if (!sdmounted)
+    if (!sdmounted)
     {
-      SD = new SdFat32();
-      if (!SD->begin(4))
+      if (!SD.begin(4))
       {
         Serial.println(F("initialization failed!"));
         gestionnaire_erreur(ERR_SD_IO);
@@ -655,7 +660,7 @@ void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode
         Serial.println(F("SD card OK."));
       }
       sdmounted = true;
-    }*/
+    }
     break;
 
   case 1: // config
@@ -918,4 +923,15 @@ void gestionnaire_erreur(int erreur)
   }
 
   // ISR(TIMER1_COMPA_vect);
+}
+
+float moyenne(Capteur *capteuri)
+{
+  float moyenne = 0;
+  for (int i = 0; i < 10; i++)
+  {
+    moyenne = moyenne + capteuri->dernieres_valeurs[i];
+  }
+  moyenne = moyenne / 10;
+  return moyenne;
 }
