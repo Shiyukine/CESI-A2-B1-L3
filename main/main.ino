@@ -32,11 +32,12 @@
 #define CAPTEUR_TYPE_TEMP 0x1
 #define CAPTEUR_TYPE_HYGR 0x2
 #define CAPTEUR_TYPE_PRESSURE 0x3
-#define CAPTEUR_TYPE_GPS 0x4
+#define CAPTEUR_TYPE_GPS_LAT 0x4
 #define CAPTEUR_TYPE_PARTICLE 0x5
 #define CAPTEUR_TYPE_TEMP_EAU 0x6
 #define CAPTEUR_TYPE_VENT 0x7
 #define CAPTEUR_TYPE_COURANTS 0x8
+#define CAPTEUR_TYPE_GPS_LON 0x9
 
 #define button1 2
 #define button2 3
@@ -45,13 +46,14 @@
 #define R 10
 #define B 11
 
+#define lum_PIN A1
+
 #include <RTClib.h>
 #include <SdFat.h>
 #include <Arduino.h>
 #include <SPI.h>
 #include <SoftwareSerial.h>
 #include <Adafruit_BMP280.h>
-#include <Wire.h>
 #include <DHT.h>
 
 #define DHT_PIN 5
@@ -83,135 +85,151 @@ int log_interval;
 float version = 1.0;
 int num_lot;
 int inactivite_config;
-float config_OCR1A;
 int prescaler;
-
-int hygrometrie;
-int temperature;
-int pression;
-int luminosite;
-int particule;
-int vent;
-int temp_eau;
-int courant;
-
-int bouton_test;
 
 int file_max_size = 2048;
 int compteur_taille_fichier = 0;
 int compteur_revision = 0;
 int mode = -1;
-Capteur *capteurs[9];
+Capteur *capteurs[10];
 int year;
 int month;
 int day;
 int previous_mode = -2;
+bool mode_change = true;
 int inactivite = 0;
 
 int etatled = 0;
 int code_couleur = -1;
 int compteur_sec = 0;
 
+bool sdmounted = false;
+
 SdFat32 *SD;
 RTC_DS1307 *rtc;
 
 // initialisation du périph, pin 7 réception, pin 8 envoie
-SoftwareSerial GPS(7, 8);
-int interval_GPS = 0;
-
-// Buffer de communication et son compteur
-char buffer[80];
-int count = 0;
-
-void clearBufferArray() // function to clear buffer array
-{
-  for (int i = 0; i < count; i++)
-  {
-    buffer[i] = NULL;
-  } // clear all index of array with command NULL
-}
-
-// Converti le numéro de jour en jour /!\ la semaine commence un dimanche
-String donne_jour_semaine(uint8_t j)
-{
-  switch (j)
-  {
-  case 0:
-    return "DIM";
-  case 1:
-    return "LUN";
-  case 2:
-    return "MAR";
-  case 3:
-    return "MER";
-  case 4:
-    return "JEU";
-  case 5:
-    return "VEN";
-  case 6:
-    return "SAM";
-  default:
-    return "   ";
-  }
-}
-
-// permet d'afficher les nombres sur deux chiffres
-String Vers2Chiffres(byte nombre)
-{
-  String resultat = "";
-  if (nombre < 10)
-    resultat = "0";
-  return resultat += String(nombre, DEC);
-}
+SoftwareSerial *GPS;
 
 // Instance DHT(Température et humidité)
-DHT dht(DHT_PIN, DHTTYPE);
-
-// Instance de la lumière
-int lum_PIN = A1;
-int lum_val;
+DHT *dht;
 
 // Instance du BMP(Pression)
 Adafruit_BMP280 *bmp;
+
+File *changement_fichier(int mess_size)
+{
+  DateTime *now = &rtc->now();
+  String aa = String(now->year()).substring(1, 3);
+  String mm = String(now->month());
+  if (now->month() < 10)
+    mm = "0" + mm;
+  String jj = String(now->day());
+  if (now->day() < 10)
+    jj = "0" + jj;
+  String file_name = aa + mm + jj + "_" + (String)compteur_revision + ".LOG";
+  static File actualFile = SD->open(file_name, O_RDWR | O_CREAT | O_TRUNC);
+  if (!actualFile)
+    gestionnaire_erreur(ERR_SD_IO);
+  bool changeFile = false;
+  if (actualFile.position() + mess_size > file_max_size)
+  {
+    compteur_revision++;
+    changeFile = true;
+    compteur_taille_fichier = 0;
+  }
+  if (year != now->year() && month != now->month() && day != now->day())
+  {
+    compteur_revision = 0;
+    year = now->year();
+    month = now->month();
+    day = now->day();
+    changeFile = true;
+  }
+  if (changeFile)
+  {
+    Serial.println("Copy to " + file_name);
+    File newFile = SD->open(file_name, O_RDWR | O_CREAT | O_TRUNC);
+    if (!newFile)
+    {
+      compteur_revision--;
+      gestionnaire_erreur(ERR_SD_IO);
+    }
+    else
+    {
+      actualFile.seek(0);
+      while (actualFile.available())
+      {
+        int lastPos = actualFile.position();
+        newFile.write(actualFile.read());
+        if (lastPos == actualFile.position())
+        {
+          gestionnaire_erreur(ERR_SD_PLEIN);
+          break;
+        }
+      }
+      newFile.flush();
+      newFile.close();
+      actualFile.seek(0);
+      Serial.println(F("Changed file"));
+    }
+  }
+  return &actualFile;
+}
+
+void enregistrement()
+{
+  String mess = "";
+  File *actualFile = changement_fichier(mess.length());
+  for (int i = 0; i < sizeof(capteurs) / sizeof(capteurs[0]); i++)
+  {
+    mess += "Capteur " + (String)i + " : " + (String)capteurs[i]->dernieres_valeurs[capteurs[i]->tableau_valeurs_index - 1];
+  }
+  int pos = actualFile->position();
+  actualFile->println(mess);
+  if (pos == actualFile->position())
+    gestionnaire_erreur(ERR_SD_PLEIN);
+  else
+    actualFile->flush();
+}
 
 void setup()
 {
   Serial.begin(115200);
 
-  cli();                   // désactive les interruptions.
   pinMode(button1, INPUT); // Etablissement des pins
   pinMode(button2, INPUT); //
-  pinMode(9, OUTPUT);      // Vert
-  pinMode(10, OUTPUT);     // Rouge
-  pinMode(11, OUTPUT);     // Bleu
+  pinMode(V, OUTPUT);      // Vert
+  pinMode(R, OUTPUT);      // Rouge
+  pinMode(B, OUTPUT);      // Bleu
 
-  mode = MODE_STANDARD;  // Si on ne fait rien au démarrage, la station est en mode standard.
-  digitalWrite(9, HIGH); // Allulage LED verte.
+  int init_mode = MODE_STANDARD; // Si on ne fait rien au démarrage, la station est en mode standard.
 
   while (digitalRead(3) == HIGH) // Si on appuie sur le bouton 2, le mode configuration se lance.
   {
-    Serial.println("FILS DE PUTE");
-    mode = MODE_CONFIGURATION;
-    digitalWrite(11, HIGH);
-    digitalWrite(10, HIGH);
-    digitalWrite(9, HIGH);
+    init_mode = MODE_CONFIGURATION;
+    digitalWrite(B, HIGH);
+    digitalWrite(R, HIGH);
+    digitalWrite(V, HIGH);
   }
 
-  TCCR1A = 0; // Reset TCCR1A à 0 (timer + comparateur)
-  TCCR1B = 0; // Reset TCCR1A à 0 (timer + comparateur)
-  /*TCCR1B |= B00000100; // Met CS12 à 1 pour un prescaler à 256 (limite)
+  gestionnaire_modes(init_mode);
+
+  cli(); // désactive les interruptions.
+
+  TCCR1A = 0;          // Reset TCCR1A à 0 (timer + comparateur)
+  TCCR1B = 0;          // Reset TCCR1A à 0 (timer + comparateur)
+  TCCR1B |= B00000100; // Met CS12 à 1 pour un prescaler à 256 (limite)
   TIMSK1 |= B00000010; // Met OCIE1A à 1 pour comparer le comparer au match A
 
-  OCR1A = 31250;*/
+  OCR1A = 31250;
 
   sei(); // Reactivation des interruptions.
 
   attachInterrupt(digitalPinToInterrupt(2), timer, CHANGE); // interruptions materielles pour les 2 boutons.
   attachInterrupt(digitalPinToInterrupt(3), timer, CHANGE);
 
-  // Serial.println("Mode de lancement : " + String(mode));
-
-  for (int i = 0; i < 9; i++) // allocation mémoire des capteurs de la structure.
+  for (int i = 0; i < 10; i++) // allocation mémoire des capteurs de la structure.
   {
     capteurs[i] = (Capteur *)calloc(1, sizeof(Capteur));
     capteurs[i]->type = i;
@@ -235,12 +253,12 @@ void setup()
   capteurs[3]->max = DEFAULT_PRESSURE_MAX;
 
   // GPS
-  GPS.begin(9600);
-
-  // Wire.begin();
+  GPS = new SoftwareSerial(7, 8);
+  GPS->begin(9600);
 
   // DHT
-  dht.begin();
+  dht = new DHT(DHT_PIN, DHTTYPE);
+  dht->begin();
 
   // BMP
   bmp = new Adafruit_BMP280();
@@ -263,15 +281,16 @@ void timer()
   TCNT1 = 0;           // compteur du timer a 0.
   TCCR1B |= B00000101; // configure le registre TCCR1B pour activer le Timer 1 en mode CTC avec un préscaleur de 1024.
   TIMSK1 |= B00000010; // Cela active l'interruption de correspondance avec le registre OCR1A pour le Timer 1.
-  OCR1A =              /*31250*/
-      39063;           // configure la valeur de comparaison du Timer 1 à 39063. (2.5 secondes.)
+  OCR1A = 39063;       // configure la valeur de comparaison du Timer 1 à 39063. (2.5 secondes.)
   sei();               // Reactivation des interruptions.
+  mode_change = true;
 }
 
 ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
 {
-  if (/*mode != previous_mode*/ true)
+  if (mode_change)
   {
+    mode_change = false;
     switch (mode) // Différents cas.
     {
     case MODE_STANDARD:           // mode = 0
@@ -305,6 +324,209 @@ ISR(TIMER1_COMPA_vect) // (Interruption Service Routine)
         break;
       }
     }
+    mode_change = false;
+  }
+  // gestionnaire erreur
+  if (code_couleur == 2)
+  { // Erreur Horloge RTC
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(B, 0);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 0);
+        analogWrite(B, 255);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println(F("Erreur accès horloge RTC"));
+  }
+
+  if (code_couleur == 5)
+  { // Erreur GPS
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 0);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 255);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println(F("Erreur accès GPS"));
+  }
+
+  if (code_couleur == 3)
+  { // Erreur accès capteurs
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 0);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 0);
+        analogWrite(V, 255);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println(F("Erreur accès capteur"));
+  }
+
+  if (code_couleur == 4)
+  { // Erreur incohérence
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 0);
+        analogWrite(V, 255);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 3)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 0);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println(F("Erreur données incohérentes // Vérification matérielle requise"));
+  }
+
+  if (code_couleur == 0)
+  { // Erreur carte SD pleine
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 0);
+        analogWrite(B, 0);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 255);
+        analogWrite(B, 255);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println(F("Erreur : Carte SD pleine"));
+  }
+
+  if (code_couleur == 1)
+  { // Erreur accès/écriture carte SD
+    if (etatled == 0)
+    {
+      if (compteur_sec == 1)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 255);
+        analogWrite(V, 255);
+        etatled = 1;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    else
+    {
+      if (compteur_sec == 3)
+      {
+        compteur_sec = 0;
+        analogWrite(R, 255);
+        analogWrite(V, 0);
+        analogWrite(V, 0);
+        etatled = 0;
+      }
+      else
+      {
+        compteur_sec++;
+      }
+    }
+    Serial.println(F("Erreur accès/écriture sur carte SD"));
   }
 }
 
@@ -312,205 +534,135 @@ void loop() // test de loop rapide (a ne pas prendre en compte)
 {
   if (mode == MODE_STANDARD)
   {
-
-    long watchdog = millis() + 10000;
-    byte buffer = 0;
-    char values[5];
-    char latitude[16];
-    char longitude[16];
-    // on attend essaie pendant 10 secondes de récupérer la variable de la position
-    while (watchdog > millis())
+    /*while (GPS->available())
     {
-      // attente du début de variable $
-      while (GPS.read() != 36)
+      GPS->read();
+      String str = GPS->readStringUntil('\n');
+      if (str.startsWith("$GPGGA"))
       {
-        yield();
-      } // (char)36 <=> $
-      for (int i = 0; i < 5; i++)
-      {
-        while (!GPS.available() && watchdog > millis())
+        char lati[] = "";
+        char longi[] = "";
+        int delim_index = 0;
+        for (int i = 0; i < str.length(); i++)
         {
-          yield();
-        } // wait for char to get
-        values[i] = GPS.read();
+          if (str[i] == ',')
+            delim_index++;
+          else
+          {
+            if (delim_index == 2)
+              lati[i] = str[i];
+            if (delim_index == 4)
+              longi[i] = str[i];
+          }
+        }
+        capteurs[CAPTEUR_TYPE_GPS_LAT]->dernieres_valeurs[capteurs[CAPTEUR_TYPE_GPS_LAT]->tableau_valeurs_index] = String(lati).toInt();
+        capteurs[CAPTEUR_TYPE_GPS_LAT]->tableau_valeurs_index++;
+        capteurs[CAPTEUR_TYPE_GPS_LON]->dernieres_valeurs[capteurs[CAPTEUR_TYPE_GPS_LON]->tableau_valeurs_index] = String(longi).toInt();
+        capteurs[CAPTEUR_TYPE_GPS_LON]->tableau_valeurs_index++;
       }
-      if ((String)values == "GPRMC")
+    }
+    for (int i = 0; i < 10; i++)
+    {
+      int val = -999;
+      switch (i)
       {
+      case CAPTEUR_TYPE_LUMIN:
+        val = analogRead(lum_PIN);
+        break;
+
+      case CAPTEUR_TYPE_TEMP:
+        // val = dht->readTemperature();
+        break;
+
+      case CAPTEUR_TYPE_HYGR:
+        // val = dht->readHumidity();
+        break;
+
+      case CAPTEUR_TYPE_PRESSURE:
+        // val = bmp->readPressure() / 100;
+        break;
+
+      case CAPTEUR_TYPE_PARTICLE:
+        val = rand() % 200;
+        break;
+
+      case CAPTEUR_TYPE_TEMP_EAU:
+        val = rand() % 30;
+        break;
+
+      case CAPTEUR_TYPE_VENT:
+        val = rand() % 30;
+        break;
+
+      case CAPTEUR_TYPE_COURANTS:
+        val = rand() % 5;
+        break;
+
+      default:
         break;
       }
-    }
-    free(values);
-    // préparation du tableau à stocker
-    float *coordonnee = (float *)calloc(2, sizeof(float));
-
-    // Une fois la variable trouvée, on vérfie on décale sur la latitude
-    byte commaCounter = 0;
-    while (!GPS.available() && watchdog > millis())
-    {
-      yield();
-    } // wait for char to get
-    char caractere = GPS.read();
-    while (commaCounter < 3 && watchdog > millis())
-    {
-      if (caractere == ',')
+      if (val != -999)
       {
-        commaCounter++;
+        capteurs[i]->dernieres_valeurs[capteurs[i]->tableau_valeurs_index] = val;
+        capteurs[i]->tableau_valeurs_index++;
       }
-      while (!GPS.available() && watchdog > millis())
-      {
-        yield();
-      } // wait for char to get
-      caractere = GPS.read();
-    }
-    // On vérfie que la latitude existe
-    latitude[buffer] = caractere;
-    if (latitude[0] != ',')
-    {
-      while (latitude[buffer++] != ',' && watchdog > millis())
-      {
-        while (!GPS.available() && watchdog > millis())
-        {
-          yield();
-        } // wait for char to get
-        latitude[buffer] = GPS.read();
-      }
-      latitude[buffer - 1] = '\0';
-      coordonnee[0] = atof(latitude);
-      // free(latitude);
+    }*/
 
-      // je retire l'unité
-      for (int i = 0; i < 2; i++)
-      {
-        while (!GPS.available() && watchdog > millis())
-        {
-          yield();
-        } // wait for char to get
-        GPS.read();
-      }
-
-      // On récupère la valeur de la longitude
-      buffer = 0;
-      while (!GPS.available() && watchdog > millis())
-      {
-        yield();
-      } // wait for char to get
-      longitude[buffer] = GPS.read();
-      while (longitude[buffer++] != ',' && watchdog > millis())
-      {
-        while (!GPS.available() && watchdog > millis())
-        {
-          yield();
-        } // wait for char to get
-        longitude[buffer] = GPS.read();
-      }
-      longitude[buffer - 1] = '\0';
-      coordonnee[1] = atof(longitude);
-      free(longitude);
-    }
-    Serial.print(F("\nLatitude: "));
-    Serial.println(coordonnee[0]);
-    Serial.print(F("Longitude: "));
-    Serial.println(coordonnee[1]);
-
-    // DHT
-    Serial.print(F("température:"));
-    Serial.println(dht.readTemperature());
-    Serial.print(F("humidité:"));
-    Serial.println(dht.readHumidity());
-
-    // Lumière
-    lum_val = analogRead(lum_PIN);
-    Serial.print(F("Valeur luminosité :"));
-    Serial.println(lum_val);
-
-    // Pression
-    Serial.print(F("Pression:"));
-    Serial.println(bmp->readPressure() / 100);
-
-    // Temperature eau
-    Serial.print(F("Temperature eau : "));
-    float t_eau = rand() % 30;
-    Serial.print(t_eau);
-    Serial.println(F(" °C"));
-
-    // courant marin
-    Serial.print(F("Courant marin : "));
-    float c_marin = rand() % 5;
-    Serial.print(c_marin);
-    Serial.println(F(" noeud"));
-
-    // Force du vent
-    Serial.print(F("Force du vent : "));
-    float f_vent = rand() % 30;
-    Serial.print(f_vent);
-    Serial.println(F(" metre/seconde"));
-
-    // Taux de particule fine
-    Serial.print(F("Taux de particule fine : "));
-    float partic = rand() % 200;
-    Serial.print(partic);
-    Serial.println(F(" microgramme/metre^3"));
-
-    if (dht.readTemperature() > 40 || dht.readTemperature() < -10 || lum_val > 25000 || lum_val < 0 || bmp->readPressure() / 100 < 900 ||
+    /*if (dht->readTemperature() > 40 || dht->readTemperature() < -10 || lum_val > 25000 || lum_val < 0 || bmp->readPressure() / 100 < 900 ||
         bmp->readPressure() / 100 > 1050 || t_eau > 29 || c_marin > 4 || f_vent > 28 || partic > 170)
-      gestionnaire_erreur(ERR_CAPTEUR_INCOHERENTE);
+      gestionnaire_erreur(ERR_CAPTEUR_INCOHERENTE);*/
     // enregistrement();
+    //   delay(2000);
   }
-
-  if (mode == MODE_CONFIGURATION && millis() - inactivite >= 30000)
-    gestionnaire_modes(0);
-  else
+  else if (mode == MODE_CONFIGURATION)
   {
-    // get_commande();
+    if (millis() - inactivite >= 30000)
+      gestionnaire_modes(MODE_STANDARD);
+    else
+    {
+      get_commande();
+    }
   }
-  // delay(2e3);
+  // delay(1e3);
 }
 
 void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode comme parametre.
 {
+  mode_change = true;
   previous_mode = mode; // le mode actuel devient l'ancien mode.
 
   switch (nvmode)
   {
   case 0: // standard
-    digitalWrite(9, HIGH);
-    digitalWrite(10, LOW);
-    digitalWrite(11, LOW); // en vert
+    digitalWrite(V, HIGH);
+    digitalWrite(R, LOW);
+    digitalWrite(B, LOW); // en vert
 
     for (int i = 0; i < sizeof(capteurs) / 2; i++)
     {
       capteurs[i]->actif = 1; // active tout les capteurs en standard.
     }
-    Serial.print(F("Initializing SD card..."));
-    SD = new SdFat32();
-    rtc = new RTC_DS1307();
-    if (!SD->begin(4))
+    /*if (!sdmounted)
     {
-      Serial.println(F("initialization failed!"));
-      gestionnaire_erreur(ERR_SD_IO);
-    }
-    else
-    {
-      Serial.println(F("initialization done."));
-    }
-    if (!rtc->begin())
-    {
-      Serial.println(F("Horloge introuvable"));
-    }
-    else
-    {
-      DateTime *now = &rtc->now();
-      year = now->year();
-      month = now->month();
-      day = now->day();
-    }
+      SD = new SdFat32();
+      if (!SD->begin(4))
+      {
+        Serial.println(F("initialization failed!"));
+        gestionnaire_erreur(ERR_SD_IO);
+      }
+      else
+      {
+        Serial.println(F("SD card OK."));
+      }
+      sdmounted = true;
+    }*/
     break;
 
   case 1: // config
     inactivite = millis();
-    analogWrite(10, 255);
-    analogWrite(9, 120);
-    digitalWrite(11, LOW); // en jaune
+    analogWrite(R, 255);
+    analogWrite(V, 120);
+    digitalWrite(B, LOW); // en jaune
     for (int i = 0; i < sizeof(capteurs) / 2; i++)
     {
       capteurs[i]->actif = 0; // desactive tout les capteurs en config.
@@ -519,9 +671,9 @@ void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode
 
   case 2: // maintenance
     inactivite = millis();
-    analogWrite(10, 255);
-    analogWrite(11, 165);
-    digitalWrite(9, LOW); // en violet (au lieu de orange)
+    analogWrite(R, 255);
+    analogWrite(B, 165);
+    digitalWrite(V, LOW); // en violet (au lieu de orange)
     for (int i = 0; i < sizeof(capteurs) / 2; i++)
     {
       capteurs[i]->actif = 1; // active tout les capteurs en maintenance.
@@ -530,9 +682,9 @@ void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode
 
   case 3: // eco
 
-    digitalWrite(10, LOW);
-    digitalWrite(9, LOW);
-    digitalWrite(11, HIGH); // en bleu
+    digitalWrite(R, LOW);
+    digitalWrite(V, LOW);
+    digitalWrite(B, HIGH); // en bleu
     for (int i = 0; i < sizeof(capteurs) / 2; i++)
     {
       if (capteurs[i]->type == 5 || capteurs[i]->type == 6 || capteurs[i]->type == 7 || capteurs[i]->type == 8)
@@ -544,12 +696,192 @@ void gestionnaire_modes(int nvmode) // gestionnaire de mode avec le nouveau mode
     }
     break;
   }
-  mode = nvmode;                                              // on actualise le nouveau mode.
-  Serial.println("previous mode : " + String(previous_mode)); // affichage
-  Serial.println("Changement de mode : " + String(mode));
-  for (int i = 0; i < sizeof(capteurs) / 2; i++)
+  mode = nvmode;
+  Serial.println(F("Changement de mode : "));
+  Serial.println(previous_mode);
+  Serial.println(mode);
+}
+
+void get_commande() // fonction pour les commandes en mode config.
+{
+  int i;   // index pour les futurs capteurs que nous allons modifier.
+  int MIN; // valeur pour modifier les min et max des capteurs.
+  int MAX; // valeur pour modifier les min et max des capteurs.
+
+  if (Serial.available() != 0) // si on ecrit dans le port serie.
   {
-    Serial.println("Liste des etats des capteurs : " + String(capteurs[i]->actif));
+    inactivite = millis();
+    String command = Serial.readStringUntil('=');     // command = la commande ecrite avant le "=".
+    int value = Serial.readStringUntil('\n').toInt(); // value = la valeur ecrite apres le "=".
+
+    Serial.println(command);
+
+    if (command.startsWith("LUMIN")) // si la commande comment par LUMIN
+    {
+      i = 0; // actualisation en fonction des des capteurs.
+      MIN = 0;
+      MAX = 1023;
+    }
+
+    else if (command.startsWith("TEMP_AIR")) // si la commande comment par TEMP_AIR
+    {
+      i = 1; // actualisation en fonction des des capteurs.
+      MIN = -40;
+      MAX = 85;
+    }
+
+    else if (command.startsWith("HYGR")) // si la commande comment par HYGR
+    {
+      i = 2; // actualisation en fonction des des capteurs.
+      MIN = -40;
+      MAX = 85;
+    }
+
+    else if (command.startsWith("PRESSURE")) // si la commande comment par PRESSURE
+    {
+      i = 3; // actualisation en fonction des des capteurs.
+      MIN = 300;
+      MAX = 1100;
+    }
+
+    if (command == "LUMIN" || command == "TEMP_AIR" || command == "HYGR" || command == "PRESSURE")
+    {
+      if (value == 0 || value == 1) // si la valeur est bonne.
+      {
+        capteurs[i]->actif = value; // change l etat actif des capteurs
+      }
+      else // cas d'erreurs
+      {
+        Serial.println(F("veuillez entrer une valeur entre 0 et 1.\n"));
+      }
+      command = "None";
+    }
+
+    if (command.indexOf("MIN") > 0) // si la commande contient "MIN".
+    {
+      if (value > MIN && value < MAX) // Si les valeurs sont bonnes dans la commande.
+      {
+        capteurs[i]->min = value; // actualisation des minimum des capteurs.
+      }
+      else // cas d'erreur
+      {
+        Serial.print(F("veuillez entrer une valeur entre "));
+        Serial.print(MIN);
+        Serial.print(F(" et "));
+        Serial.print(MAX);
+        Serial.println(".");
+      }
+      command = "None";
+    }
+
+    if (command.indexOf("MAX") > 0) // si la commande contient "MAX".
+    {
+      if (value > MIN && value < MAX) // Verifie les valeurs.
+      {
+        capteurs[i]->max = value; // acutalise les valeurs max des capteurs.
+
+        for (int i; i < 9; i++) // affichage
+        {
+          Serial.print(F("Etat des maximum apres config : "));
+          Serial.println(capteurs[i]->max);
+        }
+      }
+
+      else // cas de commande fausse.
+      {
+        Serial.print(F("veuillez entrer une valeur entre "));
+        Serial.print(MIN);
+        Serial.print(" et ");
+        Serial.print(MAX);
+        Serial.println(".");
+      }
+      command = "None";
+    }
+
+    if (command == "LOG_INTERVAL") // si la commande est de modifier le LOG_INTERVAL
+    {
+      if (value > 0)
+      {
+        log_interval = value; // actualisation de LOG_INTERVAL
+
+        Serial.print(F("Nouvelle valeur de log_interval : "));
+        Serial.println(log_interval);
+      }
+      else
+      {
+        Serial.println(F("Valeur trop basse pour LOG_INTERVAL !\n"));
+      }
+    }
+
+    if (command == "FILE_SIZE") // si la commande est de modifier le FILE_SIZE
+    {
+      if (value < 16384 && value > 512) // si la valeur est bonne.
+      {
+        file_max_size = value; // actualisation de la taille
+
+        Serial.print(F("Nouvelle valeur de file_max_size : "));
+        Serial.println(file_max_size);
+      }
+      else
+      {
+        Serial.println(F("Valeur incohérente pour FILE_MAX_SIZE !\n"));
+      }
+    }
+
+    if (command == "RESET") // si la commande est RESET.
+    {
+      file_max_size = DEFAULT_FILE_MAX_SIZE; // reset TOUTE les valeurs pouvant etre modifiées.
+      log_interval = DEFAULT_LOG_INTERVAL;
+      for (int i = 0; i < 3; i++)
+      {
+        capteurs[i]->timeout = DEFAULT_TIMEOUT_CAPTEUR; // reset du timeout des capteurs
+        capteurs[i]->actif = DEFAULT_ACTIVATION;        // reset de l'etat des capteurs
+      }
+      capteurs[0]->min = DEFAULT_LUMIN_LOW; // reset des valeurs de la luminosite
+      capteurs[0]->max = DEFAULT_LUMIN_HIGH;
+
+      capteurs[1]->min = DEFAULT_MIN_TEMP; // reset des valeurs de la temperature
+      capteurs[1]->max = DEFAULT_MAX_TEMP;
+
+      capteurs[2]->min = DEFAULT_HYGR_MINT; // reset des valeurs de l'hygrometrie
+      capteurs[2]->max = DEFAULT_HYGR_MAXT;
+
+      capteurs[3]->min = DEFAULT_PRESSURE_MIN; // reset des valeurs de la pression
+      capteurs[3]->max = DEFAULT_PRESSURE_MAX;
+    }
+
+    if (command == "VERSION") // commande d affichage de version.
+    {
+      Serial.print(F("Version : "));
+      Serial.println(version);
+    }
+
+    if (command == "TIMEOUT") // si la commande est de modifier le TIMEOUT.
+    {
+      if (value > 0) // si la valeur est bonne.
+      {
+        for (int i = 0; i < 9; i++)
+        {
+          capteurs[i]->timeout = value; // actualisation des timeout des capteurs.
+        }
+        Serial.print(F("timeout : "));
+        Serial.println(value);
+      }
+      else
+      {
+        Serial.println(F("RIP !!!"));
+      }
+    }
+
+    for (int i = 0; i < 9; i++) // affichage
+    {
+      Serial.print(F("Nouvelles valeurs actives des capteurs : "));
+      Serial.println(capteurs[i]->actif);
+      Serial.print(F("Nouvelles valeurs des seuil MIN : "));
+      Serial.println(capteurs[i]->min);
+      Serial.print(F("Nouvelles valeurs des seuil MAX : "));
+      Serial.println(capteurs[i]->max);
+    }
   }
 }
 
